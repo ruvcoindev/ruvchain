@@ -1,9 +1,13 @@
-#!/bin/sh
-sysctl net.ipv6.conf.all.disable_ipv6=0 || true
-if [ -e /config/ruvchain.conf ]
-then
-        /ruvchain -useconffile /config/ruvchain.conf
-else
-        /ruvchain -genconf > /config/ruvchain.conf
-        /ruvchain -useconffile /config/ruvchain.conf
+#!/usr/bin/env sh
+
+set -e
+
+CONF_DIR="/etc/ruvcoindev"
+
+if [ ! -f "$CONF_DIR/config.conf" ]; then
+  echo "generate $CONF_DIR/config.conf"
+  ruvchain --genconf > "$CONF_DIR/config.conf"
 fi
+
+ruvchain --useconf < "$CONF_DIR/config.conf"
+exit $?

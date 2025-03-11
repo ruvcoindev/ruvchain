@@ -8,7 +8,7 @@ package config
 func getDefaults() platformDefaultParameters {
 	return platformDefaultParameters{
 		// Admin
-		DefaultAdminListen: "tcp://localhost:9001",
+		DefaultAdminListen: "tcp://localhost:5001",
 
 		// Configuration (used for ruvchainctl)
 		DefaultConfigFile: "/etc/ruvchain.conf",

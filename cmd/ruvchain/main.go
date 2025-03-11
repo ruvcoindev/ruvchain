@@ -14,20 +14,22 @@ import (
 	"strings"
 	"syscall"
 
+	"suah.dev/protect"
+
 	"github.com/gologme/log"
 	gsyslog "github.com/hashicorp/go-syslog"
 	"github.com/hjson/hjson-go/v4"
 	"github.com/kardianos/minwinsvc"
 
-	"github.com/ruvcoindev/ruvchain/src/address"
-	"github.com/ruvcoindev/ruvchain/src/admin"
-	"github.com/ruvcoindev/ruvchain/src/config"
-	"github.com/ruvcoindev/ruvchain/src/ipv6rwc"
+	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain-go/src/admin"
+	"github.com/ruvcoindev/ruvchain-go/src/config"
+	"github.com/ruvcoindev/ruvchain-go/src/ipv6rwc"
 
-	"github.com/ruvcoindev/ruvchain/src/core"
-	"github.com/ruvcoindev/ruvchain/src/multicast"
-	"github.com/ruvcoindev/ruvchain/src/tun"
-	"github.com/ruvcoindev/ruvchain/src/version"
+	"github.com/ruvcoindev/ruvchain-go/src/core"
+	"github.com/ruvcoindev/ruvchain-go/src/multicast"
+	"github.com/ruvcoindev/ruvchain-go/src/tun"
+	"github.com/ruvcoindev/ruvchain-go/src/version"
 )
 
 type node struct {
@@ -39,6 +41,20 @@ type node struct {
 
 // The main function is responsible for configuring and starting Ruvchain.
 func main() {
+	// Not all operations are coverable with pledge(2), so immediately
+	// limit file system access with unveil(2), effectively preventing
+	// "proc exec" promises right from the start:
+	//
+	// - read arbitrary config file
+	// - create/write arbitrary log file
+	// - read/write/chmod/remove admin socket, if at all
+	if err := protect.Unveil("/", "rwc"); err != nil {
+		panic(fmt.Sprintf("unveil: / rwc: %v", err))
+	}
+	if err := protect.UnveilBlock(); err != nil {
+		panic(fmt.Sprintf("unveil: %v", err))
+	}
+
 	genconf := flag.Bool("genconf", false, "print a new config to stdout")
 	useconf := flag.Bool("useconf", false, "read HJSON/JSON config from stdin")
 	useconffile := flag.String("useconffile", "", "read HJSON/JSON config from specified file path")
@@ -294,6 +310,21 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+	}
+
+	// Promise final modes of operation.  At this point, if at all:
+	// - raw socket is created/open
+	// - admin socket is created/open
+	// - privileges are dropped to non-root user
+	//
+	// Peers, InterfacePeers, Listen can be UNIX sockets;
+	// Go's net.Listen.Close() deletes files on shutdown.
+	promises := []string{"stdio", "cpath", "inet", "unix", "dns"}
+	if len(cfg.MulticastInterfaces) > 0 {
+		promises = append(promises, "mcast")
+	}
+	if err := protect.Pledge(strings.Join(promises, " ")); err != nil {
+		panic(fmt.Sprintf("pledge: %v: %v", promises, err))
 	}
 
 	// Block until we are told to shut down.

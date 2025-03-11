@@ -2,7 +2,7 @@
 
 set -ef
 
-PKGSRC=${PKGSRC:-github.com/ruvcoindev/ruvchain/src/version}
+PKGSRC=${PKGSRC:-github.com/ruvcoindev/ruvchain-go/src/version}
 PKGNAME=${PKGNAME:-$(sh contrib/semver/name.sh)}
 PKGVER=${PKGVER:-$(sh contrib/semver/version.sh --bare)}
 

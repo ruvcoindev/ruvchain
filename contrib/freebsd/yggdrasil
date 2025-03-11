@@ -1,0 +1,72 @@
+#!/bin/sh
+#
+# Put the ruvchain and ruvchainctl binaries into /usr/local/bin
+# Then copy this script into /etc/rc.d/ruvchain
+# Finally, run:
+#   1. chmod +x /etc/rc.d/ruvchain /usr/local/bin/{ruvchain,ruvchainctl}
+#   2. echo "ruvchain_enable=yes" >> /etc/rc.d
+#   3. service ruvchain start
+#
+# PROVIDE: ruvchain
+# REQUIRE: networking
+# KEYWORD:
+
+. /etc/rc.subr
+
+name="ruvchain"
+rcvar="ruvchain_enable"
+
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+
+pidfile="/var/run/ruvchain/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-P ${pidfile} -r -f ${ruvchain_command}"
+
+ruvchain_start()
+{
+	test ! -x /usr/local/bin/ruvchain && (
+		logger -s -t ruvchain "Warning: /usr/local/bin/ruvchain is missing or not executable"
+		logger -s -t ruvchain "Copy the ruvchain binary into /usr/local/bin and then chmod +x /usr/local/bin/ruvchain"
+		return 1
+	)
+
+	test ! -f /etc/ruvchain.conf && (
+		logger -s -t ruvchain "Generating new configuration file into /etc/ruvchain.conf"
+		/usr/local/bin/ruvchain -genconf > /etc/ruvchain.conf
+	)
+
+	tap_path="$(cat /etc/ruvchain.conf | egrep -o '/dev/tap[0-9]{1,2}$')"
+	tap_name="$(echo -n ${tap_path} | tr -d '/dev/')"
+
+	/sbin/ifconfig ${tap_name} >/dev/null 2>&1 || (
+		logger -s -t ruvchain "Creating ${tap_name} adapter"
+		/sbin/ifconfig ${tap_name} create || logger -s -t ruvchain "Failed to create ${tap_name} adapter"
+	)
+
+	test ! -d /var/run/ruvchain && mkdir -p /var/run/ruvchain
+
+	logger -s -t ruvchain "Starting ruvchain"
+	${command} ${command_args} /usr/local/bin/ruvchain -useconffile /etc/ruvchain.conf \
+		1>/var/log/ruvchain.stdout.log \
+		2>/var/log/ruvchain.stderr.log &
+}
+
+ruvchain_stop()
+{
+	logger -s -t ruvchain "Stopping ruvchain"
+	test -f /var/run/ruvchain/${name}.pid && kill -TERM $(cat /var/run/ruvchain/${name}.pid)
+
+	tap_path="$(cat /etc/ruvchain.conf | grep /dev/tap | egrep -o '/dev/.*$')"
+        tap_name="$(echo -n ${tap_path} | tr -d '/dev/')"
+
+	/sbin/ifconfig ${tap_name} >/dev/null 2>&1 && (
+		logger -s -t ruvchain "Destroying ${tap_name} adapter"
+		/sbin/ifconfig ${tap_name} destroy || logger -s -t ruvchain "Failed to destroy ${tap_name} adapter"
+	)
+}
+
+load_rc_config $name
+: ${ruvchain_enable:=no}
+
+run_rc_command "$1"

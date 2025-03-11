@@ -10,7 +10,7 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/ruvcoindev/ruvchain/src/config"
+	"github.com/ruvcoindev/ruvchain-go/src/config"
 	"golang.org/x/sys/windows"
 
 	"golang.zx2c4.com/wintun"

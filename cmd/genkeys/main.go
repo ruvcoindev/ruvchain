@@ -18,18 +18,27 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/ruvcoindev/ruvchain/src/address"
+	"suah.dev/protect"
+
+	"github.com/ruvcoindev/ruvchain-go/src/address"
 )
 
 type keySet struct {
 	priv ed25519.PrivateKey
 	pub  ed25519.PublicKey
+	count uint64
 }
 
 func main() {
+	if err := protect.Pledge("stdio"); err != nil {
+		panic(err)
+	}
+
 	threads := runtime.GOMAXPROCS(0)
 	fmt.Println("Threads:", threads)
 	start := time.Now()
+	var totalKeys uint64
+	totalKeys = 0
 	var currentBest ed25519.PublicKey
 	newKeys := make(chan keySet, threads)
 	for i := 0; i < threads; i++ {
@@ -38,8 +47,9 @@ func main() {
 	for {
 		newKey := <-newKeys
 		if isBetter(currentBest, newKey.pub) || len(currentBest) == 0 {
+			totalKeys += newKey.count
 			currentBest = newKey.pub
-			fmt.Println("-----", time.Since(start))
+			fmt.Println("-----", time.Since(start), "---", totalKeys, "keys tried")
 			fmt.Println("Priv:", hex.EncodeToString(newKey.priv))
 			fmt.Println("Pub:", hex.EncodeToString(newKey.pub))
 			addr := address.AddrForKey(newKey.pub)
@@ -62,11 +72,14 @@ func isBetter(oldPub, newPub ed25519.PublicKey) bool {
 
 func doKeys(out chan<- keySet) {
 	bestKey := make(ed25519.PublicKey, ed25519.PublicKeySize)
+	var count uint64
+	count = 0
 	for idx := range bestKey {
 		bestKey[idx] = 0xff
 	}
 	for {
 		pub, priv, err := ed25519.GenerateKey(nil)
+		count++
 		if err != nil {
 			panic(err)
 		}
@@ -74,6 +87,7 @@ func doKeys(out chan<- keySet) {
 			continue
 		}
 		bestKey = pub
-		out <- keySet{priv, pub}
+		out <- keySet{priv, pub, count}
+		count = 0
 	}
 }

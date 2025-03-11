@@ -21,8 +21,8 @@ if [ $PKGBRANCH = "master" ]; then
   PKGREPLACES=ruvchain-develop
 fi
 
-GOLDFLAGS="-X github.com/ruvcoindev/ruvchain/src/config.defaultConfig=/etc/ruvchain/ruvchain.conf"
-GOLDFLAGS="${GOLDFLAGS} -X github.com/ruvcoindev/ruvchain/src/config.defaultAdminListen=unix:///var/run/ruvchain/ruvchain.sock"
+GOLDFLAGS="-X github.com/ruvcoindev/ruvchain-go/src/config.defaultConfig=/etc/ruvchain/ruvchain.conf"
+GOLDFLAGS="${GOLDFLAGS} -X github.com/ruvcoindev/ruvchain-go/src/config.defaultAdminListen=unix:///var/run/ruvchain/ruvchain.sock"
 
 if [ $PKGARCH = "amd64" ]; then GOARCH=amd64 GOOS=linux ./build -l "${GOLDFLAGS}"
 elif [ $PKGARCH = "i386" ]; then GOARCH=386 GOOS=linux ./build -l "${GOLDFLAGS}"
@@ -44,7 +44,7 @@ mkdir -p /tmp/$PKGNAME/usr/bin/
 mkdir -p /tmp/$PKGNAME/lib/systemd/system/
 
 cat > /tmp/$PKGNAME/debian/changelog << EOF
-Please see https://github.com/ruvcoindev/ruvchain/
+Please see https://github.com/ruvcoindev/ruvchain-go/
 EOF
 echo 9 > /tmp/$PKGNAME/debian/compat
 cat > /tmp/$PKGNAME/debian/control << EOF
@@ -56,7 +56,7 @@ Architecture: $PKGARCH
 Replaces: $PKGREPLACES
 Conflicts: $PKGREPLACES
 Depends: systemd
-Maintainer: Neil Alexander <neilalexander@users.noreply.github.com>
+Maintainer: ruvcoindev <ruvcoindev@users.noreply.github.com>
 Description: Ruvchain Network
  Ruvchain is an early-stage implementation of a fully end-to-end encrypted IPv6
  network. It is lightweight, self-arranging, supported on multiple platforms and
@@ -64,10 +64,10 @@ Description: Ruvchain Network
  other Ruvchain nodes.
 EOF
 cat > /tmp/$PKGNAME/debian/copyright << EOF
-Please see https://github.com/ruvcoindev/ruvchain/
+Please see https://github.com/ruvcoindev/ruvchain-go/
 EOF
 cat > /tmp/$PKGNAME/debian/docs << EOF
-Please see https://github.com/ruvcoindev/ruvchain/
+Please see https://github.com/ruvcoindev/ruvchain-go/
 EOF
 cat > /tmp/$PKGNAME/debian/install << EOF
 usr/bin/ruvchain usr/bin

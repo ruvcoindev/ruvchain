@@ -26,6 +26,61 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - in case of vulnerabilities.
 -->
 
+## [0.5.12] - 2024-12-18
+
+* Go 1.22 is now required to build Ruvchain
+
+### Changed
+
+* The `latency_ms` field in the admin socket `getPeers` response has been renamed to `latency`
+
+### Fixed
+
+* A timing regression which causes a higher level of idle protocol traffic on each peering has been fixed
+* The `-user` flag now correctly detects an empty user/group specification
+
+## [0.5.11] - 2024-12-12
+
+### Added
+
+* Support for `unveil` and `pledge` on OpenBSD
+
+### Changed
+
+* The parent selection algorithm now only chooses a new parent if there is a larger cost benefit to doing so, which should help to stabilise the tree
+* The bloom filters are now repropagated periodically, to avoid nodes getting stuck with bad state
+
+### Fixed
+
+* A memory leak caused by missed cleanup of the peer response map has been fixed
+* Other bug fixes with bloom filter propagation for off-tree filters and zero vs one bits
+* TLS-based peering connections now support TLS 1.2 again
+
+## [0.5.10] - 2024-11-24
+
+### Added
+
+* The `getPeers` admin endpoint will now report the current transmit/receive rate for each given peer
+* The `getMulticastInterfaces` admin endpoint now reports much more useful information about each interface, rather than just a list of interface names
+
+### Changed
+
+* Minor tweaks to the routing algorithm:
+  * The next-hop selection will now prefer shorter paths when the costed distance is otherwise equal, tiebreaking on peering uptime to fall back to more stable paths
+  * Link cost calculations have been smoothed out, making the costs less sensitive to sudden spikes in latency
+* Reusable name lookup and peer connection logic across different peering types for more consistent behaviour
+* Some comments in the configuration file have been revised for clarity
+* Upgrade dependencies
+
+### Fixed
+
+* Nodes with `IfName` set to `none` will now correctly respond to debug RPC requests
+* The admin socket will now be created reliably before dropping privileges with `-user`
+* Clear supplementary groups when providing a group ID as well as a user ID to `-user`
+* SOCKS and WebSocket peerings should now use the correct source interface when specified in `InterfacePeers`
+* `Peers` and `InterfacePeers` addresses that are obviously invalid (such as unspecified or multicast addresses) will now be correctly ignored
+* Listeners should now shut down correctly, which should resolve issues where multicast listeners for specific interfaces would not come back up or would log errors
+
 ## [0.5.9] - 2024-10-19
 
 ### Added
@@ -350,7 +405,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   * It was not obvious which parts of the configuration could be reloaded at runtime, and which required the application to be killed and restarted to take effect
   * Reloading the config without restarting was also a delicate and bug-prone process, and was distracting from more important developments
   * `SIGHUP` will be handled normally (i.e. by exiting)
-* `cmd/ruvrasilsim` has been removed, and is unlikely to return to this repository
+* `cmd/ruvchainsim` has been removed, and is unlikely to return to this repository
 
 ## [0.3.16] - 2021-03-18
 

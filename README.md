@@ -1,6 +1,6 @@
 # Ruvchain
 
-[![Build status](https://github.com/ruvcoindev/ruvchain/actions/workflows/ci.yml/badge.svg)](https://github.com/ruvcoindev/ruvchain/actions/workflows/ci.yml)
+[![Build status](https://github.com/ruvcoindev/ruvchain-go/actions/workflows/ci.yml/badge.svg)](https://github.com/ruvcoindev/ruvchain-go/actions/workflows/ci.yml)
 
 ## Introduction
 
@@ -24,7 +24,7 @@ or tools in the `contrib` folder.
 If you want to build from source, as opposed to installing one of the pre-built
 packages:
 
-1. Install [Go](https://golang.org) (requires Go 1.21 or later)
+1. Install [Go](https://golang.org) (requires Go 1.22 or later)
 2. Clone this repository
 2. Run `./build`
 
@@ -74,27 +74,9 @@ by giving the Ruvchain binary the `CAP_NET_ADMIN` capability.
 
 ## Documentation
 
-<<<<<<< HEAD
-Documentation is available [on our website](https://ruvchain.github.io).
+Documentation is available [on our website](https://ruvcha.in).
 
-- [Installing Ruvchain](https://ruvchain.github.io/installation.html)
-- [Configuring Ruvchain](https://ruvchain.github.io/configuration.html)
-- [Frequently asked questions](https://ruvchain.github.io/faq.html)
-- [Version changelog](CHANGELOG.md)
-=======
-Documentation is available [on our website](https://ruvcoindev.github.io).
 
-- [Installing Ruvchain](https://ruvcoindev.github.io/installation.html)
-- [Configuring Ruvchain](https://ruvcoindev.github.io/configuration.html)
-- [Frequently asked questions](https://ruvcoindev.github.io/faq.html)
-
->>>>>>> e99b138676e8b6dd8ed88d0def1fd8aa2d1710bd
-
-## Community
-
-Feel free to join us on our [Matrix
-channel](https://matrix.to/#/#ruvchain:matrix.org) at `#ruvchain:matrix.org`
-or in the `#ruvchain` IRC channel on [libera.chat](https://libera.chat).
 
 ## License
 

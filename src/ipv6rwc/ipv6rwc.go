@@ -13,8 +13,8 @@ import (
 
 	iwt "github.com/Arceliar/ironwood/types"
 
-	"github.com/ruvcoindev/ruvchain/src/address"
-	"github.com/ruvcoindev/ruvchain/src/core"
+	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain-go/src/core"
 )
 
 const keyStoreTimeout = 2 * time.Minute

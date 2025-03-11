@@ -83,7 +83,7 @@ func TestAddress_SubnetForKey(t *testing.T) {
 
 func TestAddress_Address_GetKey(t *testing.T) {
 	address := Address{
-		2, 0, 132, 138, 96, 79, 187, 126, 67, 132, 101, 219, 141, 182, 104, 149,
+		0xfa, 0, 132, 138, 96, 79, 187, 126, 67, 132, 101, 219, 141, 182, 104, 149,
 	}
 
 	expectedPublicKey := ed25519.PublicKey{
@@ -99,7 +99,7 @@ func TestAddress_Address_GetKey(t *testing.T) {
 }
 
 func TestAddress_Subnet_GetKey(t *testing.T) {
-	subnet := Subnet{3, 0, 132, 138, 96, 79, 187, 126}
+	subnet := Subnet{0xfb, 0, 132, 138, 96, 79, 187, 126}
 
 	expectedPublicKey := ed25519.PublicKey{
 		189, 186, 207, 216, 34, 64, 255, 255,

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gologme/log"
-	"github.com/ruvcoindev/ruvchain/src/config"
+	"github.com/ruvcoindev/ruvchain-go/src/config"
 )
 
 // GetLoggerWithPrefix creates a new logger instance with prefix.

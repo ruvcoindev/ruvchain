@@ -3,7 +3,7 @@ package admin
 import (
 	"encoding/hex"
 
-	"github.com/ruvcoindev/ruvchain/src/version"
+	"github.com/ruvcoindev/ruvchain-go/src/version"
 )
 
 type GetSelfRequest struct{}

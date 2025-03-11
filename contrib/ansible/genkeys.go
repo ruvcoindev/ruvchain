@@ -12,7 +12,7 @@ import (
 	"os"
 
 	"github.com/cheggaaa/pb/v3"
-	"github.com/ruvcoindev/ruvchain/src/address"
+	"github.com/ruvcoindev/ruvchain-go/src/address"
 )
 
 var numHosts = flag.Int("hosts", 1, "number of host vars to generate")

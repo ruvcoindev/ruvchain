@@ -13,15 +13,22 @@ import (
 	"strings"
 	"time"
 
+	"suah.dev/protect"
+
 	"github.com/olekukonko/tablewriter"
-	"github.com/ruvcoindev/ruvchain/src/admin"
-	"github.com/ruvcoindev/ruvchain/src/core"
-	"github.com/ruvcoindev/ruvchain/src/multicast"
-	"github.com/ruvcoindev/ruvchain/src/tun"
-	"github.com/ruvcoindev/ruvchain/src/version"
+	"github.com/ruvcoindev/ruvchain-go/src/admin"
+	"github.com/ruvcoindev/ruvchain-go/src/core"
+	"github.com/ruvcoindev/ruvchain-go/src/multicast"
+	"github.com/ruvcoindev/ruvchain-go/src/tun"
+	"github.com/ruvcoindev/ruvchain-go/src/version"
 )
 
 func main() {
+	// read config, speak DNS/TCP and/or over a UNIX socket
+	if err := protect.Pledge("stdio rpath inet unix dns"); err != nil {
+		panic(err)
+	}
+
 	// makes sure we can use defer and still return an error code to the OS
 	os.Exit(run())
 }
@@ -75,6 +82,11 @@ func run() int {
 		conn, err = net.Dial("tcp", cmdLineEnv.endpoint)
 	}
 	if err != nil {
+		panic(err)
+	}
+
+	// config and socket are done, work without unprivileges
+	if err := protect.Pledge("stdio"); err != nil {
 		panic(err)
 	}
 
@@ -174,9 +186,9 @@ func run() int {
 		if err := json.Unmarshal(recv.Response, &resp); err != nil {
 			panic(err)
 		}
-		table.SetHeader([]string{"URI", "State", "Dir", "IP Address", "Uptime", "RTT", "RX", "TX", "Pr", "Cost", "Last Error"})
+		table.SetHeader([]string{"URI", "State", "Dir", "IP Address", "Uptime", "RTT", "RX", "TX", "Down", "Up", "Pr", "Cost", "Last Error"})
 		for _, peer := range resp.Peers {
-			state, lasterr, dir, rtt := "Up", "-", "Out", "-"
+			state, lasterr, dir, rtt, rxr, txr := "Up", "-", "Out", "-", "-", "-"
 			if !peer.Up {
 				state, lasterr = "Down", fmt.Sprintf("%s ago: %s", peer.LastErrorTime.Round(time.Second), peer.LastError)
 			} else if rttms := float64(peer.Latency.Microseconds()) / 1000; rttms > 0 {
@@ -190,6 +202,12 @@ func run() int {
 				uri.RawQuery = ""
 				uristring = uri.String()
 			}
+			if peer.RXRate > 0 {
+				rxr = peer.RXRate.String() + "/s"
+			}
+			if peer.TXRate > 0 {
+				txr = peer.TXRate.String() + "/s"
+			}
 			table.Append([]string{
 				uristring,
 				state,
@@ -199,6 +217,8 @@ func run() int {
 				rtt,
 				peer.RXBytes.String(),
 				peer.TXBytes.String(),
+				rxr,
+				txr,
 				fmt.Sprintf("%d", peer.Priority),
 				fmt.Sprintf("%d", peer.Cost),
 				lasterr,
@@ -273,9 +293,21 @@ func run() int {
 		if err := json.Unmarshal(recv.Response, &resp); err != nil {
 			panic(err)
 		}
-		table.SetHeader([]string{"Interface"})
+		fmtBool := func(b bool) string {
+			if b {
+				return "Yes"
+			}
+			return "-"
+		}
+		table.SetHeader([]string{"Name", "Listen Address", "Beacon", "Listen", "Password"})
 		for _, p := range resp.Interfaces {
-			table.Append([]string{p})
+			table.Append([]string{
+				p.Name,
+				p.Address,
+				fmtBool(p.Beacon),
+				fmtBool(p.Listen),
+				fmtBool(p.Password),
+			})
 		}
 		table.Render()
 
