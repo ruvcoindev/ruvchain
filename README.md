@@ -1,6 +1,6 @@
 # Ruvchain
 
-[![Build status](https://github.com/ruvcoindev/ruvchain-go/actions/workflows/ci.yml/badge.svg)](https://github.com/ruvcoindev/ruvchain-go/actions/workflows/ci.yml)
+[![Build status](https://github.com/ruvcoindev/ruvchain/actions/workflows/ci.yml/badge.svg)](https://github.com/ruvcoindev/ruvchain/actions/workflows/ci.yml)
 
 ## Introduction
 
@@ -15,7 +15,7 @@ connectivity - it also works over IPv4.
 Ruvchain works on a number of platforms, including Linux, macOS, Ubiquiti
 EdgeRouter, VyOS, Windows, FreeBSD, OpenBSD and OpenWrt.
 
-Please see our [Installation](https://ruvcoindev.github.io/installation.html)
+Please see our [Installation](https://ruvcha.in/installation.html)
 page for more information. You may also find other platform-specific wrappers, scripts
 or tools in the `contrib` folder.
 
