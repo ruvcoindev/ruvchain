@@ -1,0 +1,25 @@
+[Unit]
+Description=Ruvchain Network
+Wants=network-online.target
+Wants=ruvchain-default-config.service
+After=network-online.target
+After=ruvchain-default-config.service
+
+[Service]
+Group=ruvchain
+ProtectHome=true
+ProtectSystem=strict
+NoNewPrivileges=true
+RuntimeDirectory=ruvchain
+ReadWritePaths=/var/run/ruvchain/ /run/ruvchain/
+SyslogIdentifier=ruvchain
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+ExecStartPre=+-/sbin/modprobe tun
+ExecStart=/usr/bin/ruvchain -useconffile /etc/ruvchain/ruvchain.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
