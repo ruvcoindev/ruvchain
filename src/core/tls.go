@@ -14,7 +14,7 @@ func (c *Core) generateTLSConfig(cert *tls.Certificate) (*tls.Config, error) {
 		},
 		VerifyPeerCertificate: c.verifyTLSCertificate,
 		VerifyConnection:      c.verifyTLSConnection,
-		InsecureSkipVerify:    true,
+		InsecureSkipVerify:    false,
 		MinVersion:            tls.VersionTLS13,
 	}
 	return config, nil
