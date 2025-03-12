@@ -101,5 +101,42 @@ jobs:
           name: Windows package (${{ matrix.pkgarch }})
           path: "*.msi"
           if-no-files-found: error
+          
+          
+build-packages-router:
+    strategy:
+      fail-fast: false
+      matrix:
+        pkgarch: ["edgerouter-x", "edgerouter-lite", "vyos-amd64", "vyos-i386"]
 
+    name: Package (Router, ${{ matrix.pkgarch }})
+
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: ruvchain
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ruvcoindev/vyatta-ruvchain
+          path: vyatta-ruvchain
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+
+      - name: Build package
+        env:
+          BUILDDIR_YGG: /home/runner/work/ruvchain/ruvchain/ruvchain
+        run: cd /home/runner/work/ruvchain/ruvchain/vyatta-ruvchain && ./build-${{ matrix.pkgarch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Router package (${{ matrix.pkgarch }})
+          path: "/home/runner/work/ruvchain/ruvchain/vyatta-ruvchain/*.deb"
+          if-no-files-found: error
   
