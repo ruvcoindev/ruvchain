@@ -21,15 +21,15 @@ import (
 	"github.com/hjson/hjson-go/v4"
 	"github.com/kardianos/minwinsvc"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
-	"github.com/ruvcoindev/ruvchain-go/src/admin"
-	"github.com/ruvcoindev/ruvchain-go/src/config"
-	"github.com/ruvcoindev/ruvchain-go/src/ipv6rwc"
+	"github.com/ruvcoindev/ruvchain/src/address"
+	"github.com/ruvcoindev/ruvchain/src/admin"
+	"github.com/ruvcoindev/ruvchain/src/config"
+	"github.com/ruvcoindev/ruvchain/src/ipv6rwc"
 
-	"github.com/ruvcoindev/ruvchain-go/src/core"
-	"github.com/ruvcoindev/ruvchain-go/src/multicast"
-	"github.com/ruvcoindev/ruvchain-go/src/tun"
-	"github.com/ruvcoindev/ruvchain-go/src/version"
+	"github.com/ruvcoindev/ruvchain/src/core"
+	"github.com/ruvcoindev/ruvchain/src/multicast"
+	"github.com/ruvcoindev/ruvchain/src/tun"
+	"github.com/ruvcoindev/ruvchain/src/version"
 )
 
 type node struct {

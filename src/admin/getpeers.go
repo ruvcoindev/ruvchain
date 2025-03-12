@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain/src/address"
 )
 
 type GetPeersRequest struct {

@@ -8,13 +8,13 @@ import (
 
 	"github.com/gologme/log"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
-	"github.com/ruvcoindev/ruvchain-go/src/config"
-	"github.com/ruvcoindev/ruvchain-go/src/core"
-	"github.com/ruvcoindev/ruvchain-go/src/ipv6rwc"
-	"github.com/ruvcoindev/ruvchain-go/src/multicast"
-	"github.com/ruvcoindev/ruvchain-go/src/tun"
-	"github.com/ruvcoindev/ruvchain-go/src/version"
+	"github.com/ruvcoindev/ruvchain/src/address"
+	"github.com/ruvcoindev/ruvchain/src/config"
+	"github.com/ruvcoindev/ruvchain/src/core"
+	"github.com/ruvcoindev/ruvchain/src/ipv6rwc"
+	"github.com/ruvcoindev/ruvchain/src/multicast"
+	"github.com/ruvcoindev/ruvchain/src/tun"
+	"github.com/ruvcoindev/ruvchain/src/version"
 )
 
 // Ruvchain mobile package is meant to "plug the gap" for mobile support, as

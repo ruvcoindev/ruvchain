@@ -21,7 +21,7 @@ GO111MODULE=on GOOS=darwin GOARCH=${PKGARCH-amd64} ./build
 
 # Check if we can find the files we need - they should
 # exist if you are running this script from the root of
-# the ruvchain-go repo and you have ran ./build
+# the ruvchain repo and you have ran ./build
 test -f ruvchain || (echo "ruvchain binary not found"; exit 1)
 test -f ruvchainctl || (echo "ruvchainctl binary not found"; exit 1)
 test -f contrib/macos/ruvchain.plist || (echo "contrib/macos/ruvchain.plist not found"; exit 1)

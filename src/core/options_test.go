@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/ruvcoindev/ruvchain-go/src/config"
+	"github.com/ruvcoindev/ruvchain/src/config"
 )
 
 // Tests that duplicate peers in the configuration file

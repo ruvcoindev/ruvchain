@@ -12,7 +12,7 @@ import (
 	iwt "github.com/Arceliar/ironwood/types"
 	"github.com/Arceliar/phony"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain/src/address"
 )
 
 const (

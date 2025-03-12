@@ -10,7 +10,7 @@ import (
 	"github.com/hjson/hjson-go/v4"
 	"golang.org/x/text/encoding/unicode"
 
-	"github.com/ruvcoindev/ruvchain-go/src/config"
+	"github.com/ruvcoindev/ruvchain/src/config"
 )
 
 type CmdLineEnv struct {

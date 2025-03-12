@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ruvcoindev/ruvchain-go/src/core"
+	"github.com/ruvcoindev/ruvchain/src/core"
 )
 
 // TODO: Add authentication

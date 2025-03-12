@@ -1,4 +1,4 @@
-module github.com/ruvcoindev/ruvchain-go
+module github.com/ruvcoindev/ruvchain
 
 go 1.22
 

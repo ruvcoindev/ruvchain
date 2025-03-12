@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/Arceliar/phony"
-	"github.com/ruvcoindev/ruvchain-go/src/admin"
+	"github.com/ruvcoindev/ruvchain/src/admin"
 )
 
 type GetMulticastInterfacesRequest struct{}

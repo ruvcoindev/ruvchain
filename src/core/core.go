@@ -16,8 +16,8 @@ import (
 	"github.com/Arceliar/phony"
 	"github.com/gologme/log"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
-	"github.com/ruvcoindev/ruvchain-go/src/version"
+	"github.com/ruvcoindev/ruvchain/src/address"
+	"github.com/ruvcoindev/ruvchain/src/version"
 )
 
 // The Core object represents the Ruvchain node. You should create a Core

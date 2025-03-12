@@ -11,7 +11,7 @@ import (
 	"github.com/Arceliar/phony"
 
 	"github.com/Arceliar/ironwood/network"
-	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain/src/address"
 )
 
 type SelfInfo struct {

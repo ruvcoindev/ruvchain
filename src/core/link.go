@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/Arceliar/phony"
-	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain/src/address"
 	"golang.org/x/crypto/blake2b"
 )
 

@@ -16,7 +16,7 @@ import (
 	"github.com/gologme/log"
 	"github.com/wlynxg/anet"
 
-	"github.com/ruvcoindev/ruvchain-go/src/core"
+	"github.com/ruvcoindev/ruvchain/src/core"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/net/ipv6"
 )

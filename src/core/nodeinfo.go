@@ -10,7 +10,7 @@ import (
 
 	iwt "github.com/Arceliar/ironwood/types"
 	"github.com/Arceliar/phony"
-	"github.com/ruvcoindev/ruvchain-go/src/version"
+	"github.com/ruvcoindev/ruvchain/src/version"
 )
 
 type nodeinfo struct {

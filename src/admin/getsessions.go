@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain/src/address"
 )
 
 type GetSessionsRequest struct{}

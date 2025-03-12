@@ -20,7 +20,7 @@ import (
 
 	"suah.dev/protect"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
+	"github.com/ruvcoindev/ruvchain/src/address"
 )
 
 type keySet struct {

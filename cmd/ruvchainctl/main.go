@@ -16,11 +16,11 @@ import (
 	"suah.dev/protect"
 
 	"github.com/olekukonko/tablewriter"
-	"github.com/ruvcoindev/ruvchain-go/src/admin"
-	"github.com/ruvcoindev/ruvchain-go/src/core"
-	"github.com/ruvcoindev/ruvchain-go/src/multicast"
-	"github.com/ruvcoindev/ruvchain-go/src/tun"
-	"github.com/ruvcoindev/ruvchain-go/src/version"
+	"github.com/ruvcoindev/ruvchain/src/admin"
+	"github.com/ruvcoindev/ruvchain/src/core"
+	"github.com/ruvcoindev/ruvchain/src/multicast"
+	"github.com/ruvcoindev/ruvchain/src/tun"
+	"github.com/ruvcoindev/ruvchain/src/version"
 )
 
 func main() {

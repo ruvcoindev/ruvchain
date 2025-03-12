@@ -15,9 +15,9 @@ import (
 	"github.com/Arceliar/phony"
 	wgtun "golang.zx2c4.com/wireguard/tun"
 
-	"github.com/ruvcoindev/ruvchain-go/src/address"
-	"github.com/ruvcoindev/ruvchain-go/src/config"
-	"github.com/ruvcoindev/ruvchain-go/src/core"
+	"github.com/ruvcoindev/ruvchain/src/address"
+	"github.com/ruvcoindev/ruvchain/src/config"
+	"github.com/ruvcoindev/ruvchain/src/core"
 )
 
 type MTU uint16
