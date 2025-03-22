@@ -39,7 +39,7 @@ func (cmdLineEnv *CmdLineEnv) parseFlagsAndArgs() {
 		fmt.Println("  - ", os.Args[0], "list")
 		fmt.Println("  - ", os.Args[0], "getPeers")
 		fmt.Println("  - ", os.Args[0], "-endpoint=tcp://localhost:5001 getPeers")
-		fmt.Println("  - ", os.Args[0], "-endpoint=unix:///var/run/ruv.sock getPeers")
+		fmt.Println("  - ", os.Args[0], "-endpoint=unix:///var/run/ruvchain.sock getPeers")
 	}
 
 	server := flag.String("endpoint", cmdLineEnv.endpoint, "Admin socket endpoint")
