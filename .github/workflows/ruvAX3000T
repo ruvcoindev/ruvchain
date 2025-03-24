@@ -1,0 +1,52 @@
+name: Build RuvChain for Xiaomi AX3000T
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout RuvChain
+      uses: actions/checkout@v4
+      with:
+        repository: ruvcoindev/ruvchain
+        path: ruvchain-src
+
+    - name: Setup OpenWrt
+      run: |
+        git clone https://github.com/openwrt/openwrt.git
+        cd openwrt
+        git checkout v23.05.5
+        
+        # Копируем специфичный Makefile для RuvChain
+        mkdir -p package/custom/ruvchain
+        cp -r ../ruvchain-src/openwrt/* package/custom/ruvchain/  # если есть специфичные файлы
+        
+        # Обновляем feeds
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Configure for AX3000T
+      run: |
+        cd openwrt
+        cat << EOF > .config
+        CONFIG_TARGET_mediatek=y
+        CONFIG_TARGET_mediatek_filogic=y
+        CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_ax3000t=y
+        CONFIG_PACKAGE_ruvchain=y
+        CONFIG_DEFAULT_TARGET_OPTIMIZATION="-Os -pipe -mcpu=cortex-a53"
+        EOF
+        make defconfig
+
+    - name: Build RuvChain
+      run: |
+        cd openwrt
+        make -j$(nproc) package/custom/ruvchain/compile V=s
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ruvchain-ipk
+        path: openwrt/bin/targets/mediatek/filogic/packages/ruvchain_*.ipk
