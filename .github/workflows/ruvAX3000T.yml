@@ -1,52 +1,72 @@
-name: Build RuvChain for Xiaomi AX3000T
+name: Build OpenWrt for Xiaomi AX3000T
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-openwrt:
     runs-on: ubuntu-latest
-    steps:
-    - name: Checkout RuvChain
-      uses: actions/checkout@v4
-      with:
-        repository: ruvcoindev/ruvchain
-        path: ruvchain-src
+    timeout-minutes: 120
 
-    - name: Setup OpenWrt
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          libncurses-dev \
+          flex \
+          bison \
+          gawk \
+          gcc-multilib \
+          git \
+          rsync \
+          python3 \
+          unzip
+
+    - name: Clone OpenWrt
       run: |
         git clone https://github.com/openwrt/openwrt.git
         cd openwrt
         git checkout v23.05.5
-        
-        # Копируем специфичный Makefile для RuvChain
-        mkdir -p package/custom/ruvchain
-        cp -r ../ruvchain-src/openwrt/* package/custom/ruvchain/  # если есть специфичные файлы
-        
-        # Обновляем feeds
+
+    - name: Configure feeds
+      run: |
+        cd openwrt
+        echo 'src-git ruvchain https://github.com/ruvcoindev/package.git' >> feeds.conf.default
+        echo 'src-git ruvchain-connector https://github.com/ruvcoindev/luci.git' >> feeds.conf.default
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Configure for AX3000T
+    - name: Apply config for Xiaomi AX3000T
       run: |
         cd openwrt
-        cat << EOF > .config
+        cat > .config << EOF
         CONFIG_TARGET_mediatek=y
-        CONFIG_TARGET_mediatek_filogic=y
-        CONFIG_TARGET_mediatek_filogic_DEVICE_xiaomi_ax3000t=y
+        CONFIG_TARGET_mediatek_mt7981=y
+        CONFIG_TARGET_mediatek_mt7981_ax3000t=y
         CONFIG_PACKAGE_ruvchain=y
-        CONFIG_DEFAULT_TARGET_OPTIMIZATION="-Os -pipe -mcpu=cortex-a53"
+        CONFIG_PACKAGE_ruvchainctl=y
+        CONFIG_PACKAGE_kmod-tun=y
+        CONFIG_PACKAGE_libopenssl=y
         EOF
-        make defconfig
 
-    - name: Build RuvChain
+    - name: Build image
       run: |
         cd openwrt
-        make -j$(nproc) package/custom/ruvchain/compile V=s
+        make defconfig
+        make -j$(nproc) download
+        make -j$(($(nproc) + 1)) V=s
 
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
       with:
-        name: ruvchain-ipk
-        path: openwrt/bin/targets/mediatek/filogic/packages/ruvchain_*.ipk
+        name: openwrt-ax3000t
+        path: |
+          openwrt/bin/targets/mediatek/mt7981/openwrt-mediatek-mt7981-xiaomi_ax3000t-squashfs-sysupgrade.bin
+          openwrt/bin/packages/aarch64_cortex-a53/ruvchain*.ipk
