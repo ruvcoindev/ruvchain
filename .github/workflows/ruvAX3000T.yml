@@ -34,6 +34,16 @@ jobs:
         git clone https://github.com/openwrt/openwrt.git
         cd openwrt
         git checkout v23.05.5
+        
+- name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          openwrt/dl
+          openwrt/staging_dir
+          openwrt/build_dir
+        key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/feeds.conf.default') }}
+        
 
     - name: Configure feeds
       run: |
