@@ -27,15 +27,8 @@ jobs:
           git \
           rsync \
           python3 \
-          unzip
-
-    - name: Clone OpenWrt
-      run: |
-        git clone https://github.com/openwrt/openwrt.git
-        cd openwrt
-        git checkout v23.05.5
-  
-    - name: Cache dependencies
+          unzip - name: Cache dependencies
+          
       uses: actions/cache@v4
       with:
         path: |
@@ -44,6 +37,11 @@ jobs:
           openwrt/build_dir
         key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/feeds.conf.default') }}
         
+    - name: Clone OpenWrt
+      run: |
+        git clone https://github.com/openwrt/openwrt.git
+        cd openwrt
+        git checkout v23.05.5
 
     - name: Configure feeds
       run: |
