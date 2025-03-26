@@ -8,7 +8,7 @@ on:
 jobs:
   build-openwrt:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180  # Увеличено время для сборки
 
     steps:
     - name: Checkout code
@@ -27,54 +27,60 @@ jobs:
           git \
           rsync \
           python3 \
-          unzip - name: Cache dependencies
-          
+          unzip \
+          zlib1g-dev
+
+    - name: Cache dependencies
       uses: actions/cache@v4
       with:
         path: |
           openwrt/dl
           openwrt/staging_dir
           openwrt/build_dir
-        key: ${{ runner.os }}-openwrt-${{ hashFiles('openwrt/feeds.conf.default') }}
-        
+        key: ${{ runner.os }}-openwrt-${{ hashFiles('**/feeds.conf.default') }}-${{ hashFiles('.config') }}
+
     - name: Clone OpenWrt
       run: |
-        git clone https://github.com/openwrt/openwrt.git
-        cd openwrt
-        git checkout v23.05.5
+        git clone --depth=1 https://github.com/openwrt/openwrt.git -b v23.05.5
 
     - name: Configure feeds
       run: |
         cd openwrt
         echo 'src-git ruvchain https://github.com/ruvcoindev/package.git' >> feeds.conf.default
-        echo 'src-git ruvchain-connector https://github.com/ruvcoindev/luci.git' >> feeds.conf.default
+        echo 'src-git ruvchain_luci https://github.com/ruvcoindev/luci.git' >> feeds.conf.default
         ./scripts/feeds update -a
-        ./scripts/feeds install -a
+        ./scripts/feeds install -a -p ruvchain
+        ./scripts/feeds install -a -p ruvchain_luci
 
-    - name: Apply config for Xiaomi AX3000T
+    - name: Apply device config
       run: |
         cd openwrt
         cat > .config << EOF
         CONFIG_TARGET_mediatek=y
         CONFIG_TARGET_mediatek_mt7981=y
+        CONFIG_PACKAGE_iwinfo=y
+        CONFIG_PACKAGE_hostapd-common=y
+        CONFIG_PACKAGE_wpad-openssl=y
         CONFIG_TARGET_mediatek_mt7981_ax3000t=y
         CONFIG_PACKAGE_ruvchain=y
         CONFIG_PACKAGE_ruvchainctl=y
         CONFIG_PACKAGE_kmod-tun=y
         CONFIG_PACKAGE_libopenssl=y
+        CONFIG_PACKAGE_libatomic=y
+        CONFIG_OPENSSL_OPTIMIZE_SPEED=y
         EOF
 
-    - name: Build image
+    - name: Build firmware
       run: |
         cd openwrt
         make defconfig
         make -j$(nproc) download
-        make -j$(($(nproc) + 1)) V=s
+        make -j$(($(nproc + 1))) V=s
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: openwrt-ax3000t
         path: |
-          openwrt/bin/targets/mediatek/mt7981/openwrt-mediatek-mt7981-xiaomi_ax3000t-squashfs-sysupgrade.bin
+          openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
           openwrt/bin/packages/aarch64_cortex-a53/ruvchain*.ipk
