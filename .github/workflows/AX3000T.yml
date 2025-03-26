@@ -49,7 +49,7 @@ jobs:
         echo 'src-git ruvchain https://github.com/ruvcoindev/package.git' >> feeds.conf.default
         echo 'src-git ruvchain_luci https://github.com/ruvcoindev/luci.git' >> feeds.conf.default
         ./scripts/feeds update -a
-        ./scripts/feeds install -a -p ruvchain
+        ./scripts/feeds install -a -p ruvchain ruvchain-connector
         ./scripts/feeds install -a -p ruvchain_luci
 
     - name: Apply device config
