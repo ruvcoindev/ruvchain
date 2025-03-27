@@ -62,30 +62,28 @@ jobs:
           openwrt/build_dir
           ~/.cargo/registry
           ~/.go/pkg
-        key: ${{ runner.os }}-openwrt-${{ hashFiles('**/feeds.conf.default', '**/.config') }}-${{ github.sha }}
+        key: ${{ runner.os }}-openwrt-${{ hashFiles('**/feeds.conf.default', '**/.config') }}
 
     - name: Clone OpenWrt
       run: |
         git clone --depth=1 https://github.com/openwrt/openwrt.git -b v23.05.5
-        echo "FEEDS_CONF=feeds.conf.default" >> $GITHUB_ENV
 
     - name: Configure Feeds
       run: |
         cd openwrt
-        cat > $FEEDS_CONF << EOF
+        cat > feeds.conf.default << EOF
         src-git packages https://github.com/openwrt/packages.git
         src-git routing https://github.com/openwrt/routing.git
         src-git ruvchain https://github.com/ruvcoindev/package.git
-        src-git ruvchain_luci https://github.com/ruvcoindev/luci.git
+        src-git ruvchain_luci https://github.com/ruvcoindev/luci-proto-ruvchain.git
         EOF
 
         ./scripts/feeds update -a
-        ./scripts/feeds install -a -p ruvchain ruvchain-connector luci-proto-ruvchain
+        ./scripts/feeds install -a -p ruvchain
         ./scripts/feeds install -a -p ruvchain_luci
         ./scripts/feeds install \
           golang \
           rust \
-          ruvchain \
           ruvchain-connector \
           luci-proto-ruvchain
 
@@ -93,11 +91,11 @@ jobs:
       run: |
         cd openwrt
         cat > .config << EOF
-        CONFIG_TARGET_mediatek=${{ env.TARGET }}
+        CONFIG_TARGET_mediatek=y
         CONFIG_TARGET_mediatek_mt7981=y
         CONFIG_TARGET_mediatek_mt7981_${{ env.PROFILE }}=y
         
-        # Ruvchain Configuration
+        # Ruvchain
         CONFIG_PACKAGE_ruvchain=y
         CONFIG_PACKAGE_ruvchain-connector=y
         CONFIG_PACKAGE_ruvchainctl=y
@@ -109,25 +107,22 @@ jobs:
         CONFIG_PACKAGE_libatomic=y
         CONFIG_OPENSSL_OPTIMIZE_SPEED=y
         
-        # Go Configuration
+        # Go
         CONFIG_PACKAGE_golang=y
         CONFIG_PACKAGE_golang-bin=y
-        CONFIG_GOLANG_EXTERNAL_BOOTSTRAP=y
-        CONFIG_GOLANG_MOD_CACHE_WORKAROUND=y
         
-        # Rust Configuration
+        # Rust
         CONFIG_PACKAGE_rust=y
         CONFIG_PACKAGE_rustc=y
-        CONFIG_PACKAGE_cargo=y
         CONFIG_RUSTC_TARGET="aarch64-unknown-linux-musl"
-        CONFIG_RUST_USE_MUSL=y
         
-        # LuCI Configuration
+        # LuCI
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-base=y
         CONFIG_PACKAGE_luci-compat=y
         CONFIG_LUCI_LANG_en=y
         CONFIG_LUCI_LANG_ru=y
+        CONFIG_PACKAGE_luci-theme-bootstrap=y
         EOF
 
     - name: Build Toolchain
@@ -135,20 +130,20 @@ jobs:
         cd openwrt
         make defconfig
         make toolchain/install V=s
-        make package/golang/{clean,compile} V=s
-        make package/rust/{clean,compile} V=s
+        make package/golang/compile V=s
+        make package/rust/compile V=s
 
     - name: Build Firmware
       run: |
         cd openwrt
         make -j$(nproc) download
-        make -j$(($(nproc + 1)) V=s
+        make -j$(($(nproc) + 1)) V=s
 
     - name: Collect Artifacts
       run: |
         mkdir -p artifacts
         cp openwrt/bin/targets/${{ env.TARGET }}/*sysupgrade.bin artifacts/
-        cp openwrt/bin/packages/aarch64_cortex-a53/{ruvchain*,luci*} artifacts/
+        cp openwrt/bin/packages/aarch64_generic/{ruvchain*,luci-*} artifacts/
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
