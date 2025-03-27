@@ -26,7 +26,7 @@ jobs:
           gcc-multilib \
           git \
           rsync \
-          python3 \
+          python3-full \
           unzip \
           zlib1g-dev
 
@@ -49,9 +49,7 @@ jobs:
         echo 'src-git ruvchain https://github.com/ruvcoindev/package.git' >> feeds.conf.default
         echo 'src-git ruvchain_luci https://github.com/ruvcoindev/luci.git' >> feeds.conf.default
         ./scripts/feeds update -a
-        ./scripts/feeds install -a -p ruvchain
-        ./scripts/feeds install -a -p ruvchain_luci
-        ./scripts/feeds install ruvchain-connector luci-proto-ruvchain
+        ./scripts/feeds install -a -p ruvchain  ruvchain-connector luci-proto-ruvchain
 
     - name: Apply device config
       run: |
