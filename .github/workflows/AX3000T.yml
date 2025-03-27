@@ -75,7 +75,8 @@ jobs:
         src-git packages https://github.com/openwrt/packages.git
         src-git routing https://github.com/openwrt/routing.git
         src-git ruvchain https://github.com/ruvcoindev/package.git
-        src-git ruvchain_luci https://github.com/ruvcoindev/luci-proto-ruvchain.git
+        src-git ruvchain_luci https://github.com/ruvcoindev/luci.git
+        src-git ruvchain-connect https://github.com/ruvcoindev/ruvchain-connect.git
         EOF
 
         ./scripts/feeds update -a
@@ -85,7 +86,7 @@ jobs:
           golang \
           rust \
           ruvchain-connector \
-          luci-proto-ruvchain
+          luci
 
     - name: Configure Target
       run: |
