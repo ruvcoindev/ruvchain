@@ -8,7 +8,7 @@ on:
 jobs:
   build-openwrt:
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # Увеличено время для сборки
+    timeout-minutes: 200
 
     steps:
     - name: Checkout code
@@ -49,8 +49,9 @@ jobs:
         echo 'src-git ruvchain https://github.com/ruvcoindev/package.git' >> feeds.conf.default
         echo 'src-git ruvchain_luci https://github.com/ruvcoindev/luci.git' >> feeds.conf.default
         ./scripts/feeds update -a
-        ./scripts/feeds install -a -p ruvchain ruvchain-connector
+        ./scripts/feeds install -a -p ruvchain
         ./scripts/feeds install -a -p ruvchain_luci
+        ./scripts/feeds install ruvchain-connector luci-proto-ruvchain
 
     - name: Apply device config
       run: |
@@ -58,16 +59,23 @@ jobs:
         cat > .config << EOF
         CONFIG_TARGET_mediatek=y
         CONFIG_TARGET_mediatek_mt7981=y
-        CONFIG_PACKAGE_iwinfo=y
-        CONFIG_PACKAGE_hostapd-common=y
-        CONFIG_PACKAGE_wpad-openssl=y
         CONFIG_TARGET_mediatek_mt7981_ax3000t=y
         CONFIG_PACKAGE_ruvchain=y
+        CONFIG_PACKAGE_ruvchain-connector=y
         CONFIG_PACKAGE_ruvchainctl=y
         CONFIG_PACKAGE_kmod-tun=y
         CONFIG_PACKAGE_libopenssl=y
         CONFIG_PACKAGE_libatomic=y
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-compat=y
+        CONFIG_LUCI_LANG_ru=y
+        CONFIG_LUCI_LANG_en=y
         CONFIG_OPENSSL_OPTIMIZE_SPEED=y
+        CONFIG_PACKAGE_ruvchain-connector=y
+        CONFIG_PACKAGE_luci-proto-ruvchain=y
+        CONFIG_LUCI_LANG_ru=y
+        CONFIG_LUCI_LANG_en=y
         EOF
 
     - name: Build firmware
@@ -84,3 +92,5 @@ jobs:
         path: |
           openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
           openwrt/bin/packages/aarch64_cortex-a53/ruvchain*.ipk
+          openwrt/bin/packages/aarch64_cortex-a53/luci-proto-ruvchain*.ipk
+          openwrt/bin/packages/aarch64_cortex-a53/ruvchain-connector*.ipk
