@@ -5,16 +5,22 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  TARGET: mediatek/mt7981
+  PROFILE: xiaomi_ax3000t
+  GO_VERSION: 1.22.6
+  RUST_VERSION: 1.76.0
+
 jobs:
   build-openwrt:
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 240
 
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up environment
+    - name: Setup Build Environment
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -22,73 +28,130 @@ jobs:
           libncurses-dev \
           flex \
           bison \
+          gperf \
           gawk \
           gcc-multilib \
           git \
           rsync \
           python3-full \
           unzip \
-          zlib1g-dev
+          zlib1g-dev \
+          libssl-dev \
+          pkg-config \
+          curl \
+          cmake \
+          ninja-build
 
-    - name: Cache dependencies
+    - name: Install Go
+      run: |
+        curl -L https://go.dev/dl/go${{ env.GO_VERSION }}.linux-amd64.tar.gz | sudo tar -C /usr/local -xz
+        echo "PATH=$PATH:/usr/local/go/bin" >> $GITHUB_ENV
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${{ env.RUST_VERSION }}
+        echo "PATH=$PATH:$HOME/.cargo/bin" >> $GITHUB_ENV
+        rustup target add aarch64-unknown-linux-musl
+
+    - name: Cache Dependencies
       uses: actions/cache@v4
       with:
         path: |
           openwrt/dl
           openwrt/staging_dir
           openwrt/build_dir
-        key: ${{ runner.os }}-openwrt-${{ hashFiles('**/feeds.conf.default') }}-${{ hashFiles('.config') }}
+          ~/.cargo/registry
+          ~/.go/pkg
+        key: ${{ runner.os }}-openwrt-${{ hashFiles('**/feeds.conf.default', '**/.config') }}-${{ github.sha }}
 
     - name: Clone OpenWrt
       run: |
         git clone --depth=1 https://github.com/openwrt/openwrt.git -b v23.05.5
+        echo "FEEDS_CONF=feeds.conf.default" >> $GITHUB_ENV
 
-    - name: Configure feeds
+    - name: Configure Feeds
       run: |
         cd openwrt
-        echo 'src-git ruvchain https://github.com/ruvcoindev/package.git' >> feeds.conf.default
-        echo 'src-git ruvchain_luci https://github.com/ruvcoindev/luci.git' >> feeds.conf.default
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a -p ruvchain  ruvchain-connector luci-proto-ruvchain
+        cat > $FEEDS_CONF << EOF
+        src-git packages https://github.com/openwrt/packages.git
+        src-git routing https://github.com/openwrt/routing.git
+        src-git ruvchain https://github.com/ruvcoindev/package.git
+        src-git ruvchain_luci https://github.com/ruvcoindev/luci.git
+        EOF
 
-    - name: Apply device config
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a -p ruvchain ruvchain-connector luci-proto-ruvchain
+        ./scripts/feeds install -a -p ruvchain_luci
+        ./scripts/feeds install \
+          golang \
+          rust \
+          ruvchain \
+          ruvchain-connector \
+          luci-proto-ruvchain
+
+    - name: Configure Target
       run: |
         cd openwrt
         cat > .config << EOF
-        CONFIG_TARGET_mediatek=y
+        CONFIG_TARGET_mediatek=${{ env.TARGET }}
         CONFIG_TARGET_mediatek_mt7981=y
-        CONFIG_TARGET_mediatek_mt7981_ax3000t=y
+        CONFIG_TARGET_mediatek_mt7981_${{ env.PROFILE }}=y
+        
+        # Ruvchain Configuration
         CONFIG_PACKAGE_ruvchain=y
         CONFIG_PACKAGE_ruvchain-connector=y
         CONFIG_PACKAGE_ruvchainctl=y
+        CONFIG_PACKAGE_luci-proto-ruvchain=y
+        
+        # Dependencies
         CONFIG_PACKAGE_kmod-tun=y
         CONFIG_PACKAGE_libopenssl=y
         CONFIG_PACKAGE_libatomic=y
+        CONFIG_OPENSSL_OPTIMIZE_SPEED=y
+        
+        # Go Configuration
+        CONFIG_PACKAGE_golang=y
+        CONFIG_PACKAGE_golang-bin=y
+        CONFIG_GOLANG_EXTERNAL_BOOTSTRAP=y
+        CONFIG_GOLANG_MOD_CACHE_WORKAROUND=y
+        
+        # Rust Configuration
+        CONFIG_PACKAGE_rust=y
+        CONFIG_PACKAGE_rustc=y
+        CONFIG_PACKAGE_cargo=y
+        CONFIG_RUSTC_TARGET="aarch64-unknown-linux-musl"
+        CONFIG_RUST_USE_MUSL=y
+        
+        # LuCI Configuration
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-base=y
         CONFIG_PACKAGE_luci-compat=y
-        CONFIG_LUCI_LANG_ru=y
         CONFIG_LUCI_LANG_en=y
-        CONFIG_OPENSSL_OPTIMIZE_SPEED=y
-        CONFIG_PACKAGE_ruvchain-connector=y
-        CONFIG_PACKAGE_luci-proto-ruvchain=y
         CONFIG_LUCI_LANG_ru=y
-        CONFIG_LUCI_LANG_en=y
         EOF
 
-    - name: Build firmware
+    - name: Build Toolchain
       run: |
         cd openwrt
         make defconfig
-        make -j$(nproc) download
-        make -j$(($(nproc + 1))) V=s
+        make toolchain/install V=s
+        make package/golang/{clean,compile} V=s
+        make package/rust/{clean,compile} V=s
 
-    - name: Upload artifacts
+    - name: Build Firmware
+      run: |
+        cd openwrt
+        make -j$(nproc) download
+        make -j$(($(nproc + 1)) V=s
+
+    - name: Collect Artifacts
+      run: |
+        mkdir -p artifacts
+        cp openwrt/bin/targets/${{ env.TARGET }}/*sysupgrade.bin artifacts/
+        cp openwrt/bin/packages/aarch64_cortex-a53/{ruvchain*,luci*} artifacts/
+
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: openwrt-ax3000t
-        path: |
-          openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-          openwrt/bin/packages/aarch64_cortex-a53/ruvchain*.ipk
-          openwrt/bin/packages/aarch64_cortex-a53/luci-proto-ruvchain*.ipk
-          openwrt/bin/packages/aarch64_cortex-a53/ruvchain-connector*.ipk
+        name: openwrt-${{ env.PROFILE }}
+        path: artifacts/*
