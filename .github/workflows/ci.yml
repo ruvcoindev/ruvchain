@@ -31,19 +31,15 @@ jobs:
       actions: read
       contents: read
       security-events: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
         with:
           languages: go
-
       - name: Autobuild
         uses: github/codeql-action/autobuild@v2
-
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
 
@@ -51,23 +47,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        goversion: ["1.21", "1.22", "1.23","1.24"]
-
+        goversion: ["1.21", "1.22", "1.23", "1.24"]
     name: Build & Test (Linux, Go ${{ matrix.goversion }})
     needs: [lint]
-
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.goversion }}
-
       - name: Build Ruvchain
         run: go build -v ./...
-
       - name: Unit tests
         run: go test -v ./...
 
@@ -75,23 +66,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        goversion: ["1.21", "1.22", "1.23","1.24"]
-
+        goversion: ["1.21", "1.22", "1.23", "1.24"]
     name: Build & Test (Windows, Go ${{ matrix.goversion }})
     needs: [lint]
-
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.goversion }}
-
       - name: Build Ruvchain
         run: go build -v ./...
-
       - name: Unit tests
         run: go test -v ./...
 
@@ -99,23 +85,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        goversion: ["1.21", "1.22", "1.23","1.24"]
-
+        goversion: ["1.21", "1.22", "1.23", "1.24"]
     name: Build & Test (macOS, Go ${{ matrix.goversion }})
     needs: [lint]
-
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.goversion }}
-
       - name: Build Ruvchain
         run: go build -v ./...
-
       - name: Unit tests
         run: go test -v ./...
 
@@ -123,72 +104,58 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        goversion: ["1.21", "1.22", "1.23","1.24"]
+        goversion: ["1.21", "1.22", "1.23", "1.24"]
         goos:
           - freebsd
           - openbsd
-
     name: Build (Cross ${{ matrix.goos }}, Go ${{ matrix.goversion }})
     needs: [lint]
-
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.goversion }}
-
       - name: Build Ruvchain
         run: go build -v ./...
         env:
           GOOS: ${{ matrix.goos }}
 
   build-android:
-  strategy:
-    fail-fast: false
-    matrix:
-      goversion: ["1.21", "1.22", "1.23", "1.24"]
-      arch: [arm64, arm]
-  
-  name: Build Android (${{ matrix.arch }}, Go ${{ matrix.goversion }})
-  needs: [lint]
-  
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
+    strategy:
+      fail-fast: false
+      matrix:
+        goversion: ["1.21", "1.22", "1.23", "1.24"]
+        arch: [arm64, arm]
+    name: Build Android (${{ matrix.arch }}, Go ${{ matrix.goversion }})
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.goversion }}
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: 26.2.11394342
+      - name: Build for Android
+        run: |
+          export CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
+          export CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang++
+          GOOS=android GOARCH=${{ matrix.arch }} \
+          CGO_ENABLED=1 \
+          go build -v -buildmode=c-shared -o ./build/android/${{ matrix.arch }}/libruvchain.so ./...
+      - name: Run Android tests
+        if: matrix.arch == 'arm64'
+        run: |
+          adb start-server
+          adb shell am instrument -w -r -e debug false \
+          -e class com.example.ruvchain.TestSuite \
+          com.example.ruvchain.test/androidx.test.runner.AndroidJUnitRunner
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.goversion }}
-
-    - name: Setup Android NDK
-      uses: android-actions/setup-android@v3
-      with:
-        ndk-version: 26.2.11394342
-
-    - name: Build for Android
-      run: |
-        if [ "${{ matrix.arch }}" = "arm64" ]; then
-          CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
-          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang++
-        else
-          CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi33-clang
-          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi33-clang++
-        fi
-        
-        GOOS=android GOARCH=${{ matrix.arch }} \
-        CGO_ENABLED=1 \
-        go build -v -buildmode=pie -o ./build/android/${{ matrix.arch }}/ruvchain ./...
-
-    - name: Run Android tests
-      if: matrix.arch == 'arm64'
-      run: |
-        adb start-server
-        adb install ./build/android/arm64/ruvchain
-        adb shell /data/local/tmp/ruvchain --test
   tests-ok:
     name: All tests passed
     needs: [lint, codeql, build-linux, build-windows, build-macos, build-android]
