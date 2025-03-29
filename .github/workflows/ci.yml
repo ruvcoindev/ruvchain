@@ -151,10 +151,10 @@ jobs:
     matrix:
       goversion: ["1.21", "1.22", "1.23", "1.24"]
       arch: [arm64, arm]
-
+  
   name: Build Android (${{ matrix.arch }}, Go ${{ matrix.goversion }})
   needs: [lint]
-
+  
   runs-on: ubuntu-latest
   steps:
     - uses: actions/checkout@v4
@@ -171,21 +171,24 @@ jobs:
 
     - name: Build for Android
       run: |
-        export CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
-        export CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang++
-
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
+          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang++
+        else
+          CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi33-clang
+          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi33-clang++
+        fi
+        
         GOOS=android GOARCH=${{ matrix.arch }} \
         CGO_ENABLED=1 \
-        go build -v -buildmode=c-shared -o ./build/android/${{ matrix.arch }}/libruvchain.so ./...
+        go build -v -buildmode=pie -o ./build/android/${{ matrix.arch }}/ruvchain ./...
 
     - name: Run Android tests
       if: matrix.arch == 'arm64'
       run: |
         adb start-server
-        adb shell am instrument -w -r -e debug false \
-        -e class com.example.ruvchain.TestSuite \
-        com.example.ruvchain.test/androidx.test.runner.AndroidJUnitRunner
-
+        adb install ./build/android/arm64/ruvchain
+        adb shell /data/local/tmp/ruvchain --test
   tests-ok:
     name: All tests passed
     needs: [lint, codeql, build-linux, build-windows, build-macos, build-android]
