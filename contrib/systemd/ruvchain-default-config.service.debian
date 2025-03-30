@@ -1,7 +1,7 @@
 [Unit]
 Description=Ruvchain default config generator
-ConditionPathExists=|!/etc/ruvchain/ruvchain.conf
-ConditionFileNotEmpty=|!/etc/ruvchain/ruvchain.conf
+ConditionPathExists=|!/etc/ruvchain.conf
+ConditionFileNotEmpty=|!/etc/ruvchain.conf
 Wants=local-fs.target
 After=local-fs.target
 
@@ -9,5 +9,5 @@ After=local-fs.target
 Type=oneshot
 Group=ruvchain
 ExecStartPre=/usr/bin/mkdir -p /etc/ruvchain
-ExecStart=/usr/bin/ruvchain -genconf > /etc/ruvchain/ruvchain.conf
+ExecStart=/usr/bin/ruvchain -genconf > /etc/ruvchain.conf
 ExecStartPost=/usr/bin/chmod -R 0640 /etc/ruvchain
