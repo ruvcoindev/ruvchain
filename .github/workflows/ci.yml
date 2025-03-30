@@ -122,40 +122,83 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
 
-  build-android:
-    strategy:
-      fail-fast: false
-      matrix:
-        goversion: ["1.21", "1.22", "1.23", "1.24"]
-        arch: [arm64, arm]
-    name: Build Android (${{ matrix.arch }}, Go ${{ matrix.goversion }})
-    needs: [lint]
+  name: Build android
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ matrix.goversion }}
-      - name: Setup Android NDK
-        uses: android-actions/setup-android@v3
-        with:
-          ndk-version: 26.2.11394342
-      - name: Build for Android
-        run: |
-          export CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
-          export CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang++
-          GOOS=android GOARCH=${{ matrix.arch }} \
-          CGO_ENABLED=1 \
-          go build -v -buildmode=c-shared -o ./build/android/${{ matrix.arch }}/libruvchain.so ./...
-      - name: Run Android tests
-        if: matrix.arch == 'arm64'
-        run: |
-          adb start-server
-          adb shell am instrument -w -r -e debug false \
-          -e class com.example.ruvchain.TestSuite \
-          com.example.ruvchain.test/androidx.test.runner.AndroidJUnitRunner
 
+    steps:
+    - name: Check out
+      uses: actions/checkout@v4
+        
+    - name: Check out Ruvchain
+      uses: actions/checkout@v3
+      with:
+        repository: ruvcoindev/ruvchain
+        path: ruvchain
+        ref: master
+        fetch-depth: 0
+    
+    - name: Setup Go environment
+      uses: actions/setup-go@v3.3.1
+    
+    - name: Install gomobile
+      run: |
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        ~/go/bin/gomobile init
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+        
+    - name: Install NDK
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r21e
+        add-to-path: false
+      
+    - name: Build Ruvchain
+      run: |
+        mkdir app/libs
+        cd ruvchain
+        PATH=$PATH:~/go/bin/ ./contrib/mobile/build -a
+        cp {ruvchain.aar,ruvchain-sources.jar} ../app/libs
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+    - name: Gradle build  
+      if: github.event_name != 'release' && github.ref_name != 'main'
+      run: |
+        chmod +x gradlew
+        ./gradlew buildRelease
+
+    - name: Gradle signed build
+      if: github.event_name == 'release' || github.ref_name == 'main'
+      run: |
+        echo "${{ secrets.RELEASE_KEYSTORE }}" > app/gha.keystore.asc
+        gpg -d --passphrase "${{ secrets.RELEASE_KEYSTORE_PASSWORD }}" --batch app/gha.keystore.asc > app/gha.jks
+        chmod +x gradlew
+        ./gradlew assembleRuvchain
+
+    - name: Upload build artifact
+      if: github.event_name == 'release' || github.ref_name == 'main'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ruvchain-android
+        path: app/build/outputs/apk/ruvchain/app-ruvchain.apk
+        
+    - name: Upload release artifact
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: app/build/outputs/apk/ruvchain/app-ruvchain.apk
+        asset_name: ruvchain-android.apk
+        asset_content_type: application/vnd.android.package-archive
   tests-ok:
     name: All tests passed
     needs: [lint, codeql, build-linux, build-windows, build-macos, build-android]
