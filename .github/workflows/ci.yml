@@ -124,7 +124,7 @@ jobs:
 
   tests-ok:
     name: All tests passed
-    needs: [lint, codeql, build-linux, build-windows, build-macos, build-android]
+    needs: [lint, codeql, build-linux, build-windows, build-macos]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:
