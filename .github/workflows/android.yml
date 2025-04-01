@@ -1,4 +1,9 @@
 name: Сборка Android
+
+on:                  # Триггеры
+  push:
+    branches: [main]
+  workflow_dispatch:
 runs-on: ubuntu-latest
 
 steps:
