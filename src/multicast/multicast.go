@@ -11,26 +11,30 @@ import (
 	"net/url"
 	"sync/atomic"
 	"time"
+	
+	
 
 	"github.com/Arceliar/phony"
 	"github.com/gologme/log"
 	"github.com/wlynxg/anet"
+	"golang.org/x/net/ipv6"
+	
 
 	"github.com/ruvcoindev/ruvchain/src/core"
-	"golang.org/x/crypto/blake2b"
-	"golang.org/x/net/ipv6"
+	"github.com/zeebo/blake3"
 )
 
-// Multicast represents the multicast advertisement and discovery mechanism used
-// by Ruvchain to find peers on the same subnet. When a beacon is received on a
-// configured multicast interface, Ruvchain will attempt to peer with that node
-// automatically.
+
+
+
+
+
 type Multicast struct {
 	phony.Inbox
 	core        *core.Core
 	log         *log.Logger
-	sock        *ipv6.PacketConn
 	running     atomic.Bool
+	sock        *ipv6.PacketConn
 	_listeners  map[string]*listenerInfo
 	_interfaces map[string]*interfaceInfo
 	_timer      *time.Timer
@@ -58,9 +62,6 @@ type listenerInfo struct {
 	port     uint16
 }
 
-// Start starts the multicast interface. This launches goroutines which will
-// listen for multicast beacons from other hosts and will advertise multicast
-// beacons out to the network.
 func New(core *core.Core, log *log.Logger, opts ...SetupOption) (*Multicast, error) {
 	m := &Multicast{
 		core:        core,
@@ -110,7 +111,6 @@ func (m *Multicast) _start() error {
 	}
 	m.sock = ipv6.NewPacketConn(conn)
 	if err = m.sock.SetControlMessage(ipv6.FlagDst, true); err != nil { // nolint:staticcheck
-		// Windows can't set this flag, so we need to handle it in other ways
 	}
 
 	go m.listen()
@@ -120,12 +120,10 @@ func (m *Multicast) _start() error {
 	return nil
 }
 
-// IsStarted returns true if the module has been started.
 func (m *Multicast) IsStarted() bool {
 	return m.running.Load()
 }
 
-// Stop stops the multicast module.
 func (m *Multicast) Stop() error {
 	var err error
 	phony.Block(m, func() {
@@ -149,7 +147,6 @@ func (m *Multicast) _stop() error {
 func (m *Multicast) _updateInterfaces() {
 	interfaces := m._getAllowedInterfaces()
 	for name, info := range interfaces {
-		// 'anet' package is used here to avoid https://github.com/golang/go/issues/40569
 		addrs, err := anet.InterfaceAddrsByInterface(&info.iface)
 		if err != nil {
 			m.log.Warnf("Failed up get addresses for interface %s: %s", name, err)
@@ -179,48 +176,40 @@ func (m *Multicast) Interfaces() map[string]net.Interface {
 	return interfaces
 }
 
-// getAllowedInterfaces returns the currently known/enabled multicast interfaces.
 func (m *Multicast) _getAllowedInterfaces() map[string]*interfaceInfo {
 	interfaces := make(map[string]*interfaceInfo)
-	// Ask the system for network interfaces
-	// 'anet' package is used here to avoid https://github.com/golang/go/issues/40569
 	allifaces, err := anet.Interfaces()
 	if err != nil {
-		// Don't panic, since this may be from e.g. too many open files (from too much connection spam)
 		m.log.Debugf("Failed to get interfaces: %s", err)
 		return nil
 	}
-	// Work out which interfaces to announce on
+
 	pk := m.core.PublicKey()
 	for _, iface := range allifaces {
 		switch {
-		case iface.Flags&net.FlagUp == 0:
-			continue // Ignore interfaces that are down
-		case iface.Flags&net.FlagRunning == 0:
-			continue // Ignore interfaces that are not running
-		case iface.Flags&net.FlagMulticast == 0:
-			continue // Ignore non-multicast interfaces
-		case iface.Flags&net.FlagPointToPoint != 0:
-			continue // Ignore point-to-point interfaces
+		case iface.Flags&net.FlagUp == 0,
+			iface.Flags&net.FlagRunning == 0,
+			iface.Flags&net.FlagMulticast == 0,
+			iface.Flags&net.FlagPointToPoint != 0:
+			continue
 		}
 		for ifcfg := range m.config._interfaces {
-			// Compile each regular expression
-			// Does the interface match the regular expression? Store it if so
 			if !ifcfg.Beacon && !ifcfg.Listen {
 				continue
 			}
 			if !ifcfg.Regex.MatchString(iface.Name) {
 				continue
 			}
-			hasher, err := blake2b.New512([]byte(ifcfg.Password))
-			if err != nil {
+
+			hasher := blake3.New()
+			hasher.Write([]byte(ifcfg.Password))
+			if _, err := hasher.Write(pk); err != nil {
 				continue
 			}
-			if n, err := hasher.Write(pk); err != nil {
-				continue
-			} else if n != ed25519.PublicKeySize {
+			if len(pk) != ed25519.PublicKeySize {
 				continue
 			}
+			
 			interfaces[iface.Name] = &interfaceInfo{
 				iface:    iface,
 				beacon:   ifcfg.Beacon,
@@ -258,69 +247,53 @@ func (m *Multicast) _announce() {
 	if err != nil {
 		panic(err)
 	}
-	// There might be interfaces that we configured listeners for but are no
-	// longer up - if that's the case then we should stop the listeners
+
 	for name, info := range m._listeners {
-		// Prepare our stop function!
 		stop := func() {
 			info.listener.Cancel()
 			delete(m._listeners, name)
 			m.log.Debugln("No longer multicasting on", name)
 		}
-		// If the interface is no longer visible on the system then stop the
-		// listener, as another one will be started further down
 		if _, ok := m._interfaces[name]; !ok {
 			stop()
 			continue
 		}
-		// It's possible that the link-local listener address has changed so if
-		// that is the case then we should clean up the interface listener
-		found := false
 		listenaddr, err := net.ResolveTCPAddr("tcp6", info.listener.Addr().String())
 		if err != nil {
 			stop()
 			continue
 		}
-		// Find the interface that matches the listener
 		if info, ok := m._interfaces[name]; ok {
+			found := false
 			for _, addr := range info.addrs {
 				if ip, _, err := net.ParseCIDR(addr.String()); err == nil {
-					// Does the interface address match our listener address?
 					if ip.Equal(listenaddr.IP) {
 						found = true
 						break
 					}
 				}
 			}
-		}
-		// If the address has not been found on the adapter then we should stop
-		// and clean up the TCP listener. A new one will be created below if a
-		// suitable link-local address is found
-		if !found {
-			stop()
+			if !found {
+				stop()
+			}
 		}
 	}
-	// Now that we have a list of valid interfaces from the operating system,
-	// we can start checking if we can send multicasts on them
+
 	for _, info := range m._interfaces {
 		iface := info.iface
 		for _, addr := range info.addrs {
 			addrIP, _, err := net.ParseCIDR(addr.String())
-			// Ignore IPv4 addresses or non-link-local addresses
 			if err != nil || addrIP.To4() != nil || !addrIP.IsLinkLocalUnicast() {
 				continue
 			}
 			if info.listen {
-				// Join the multicast group, so we can listen for beacons
 				_ = m.sock.JoinGroup(&iface, groupAddr)
 			}
 			if !info.beacon {
-				break // Don't send multicast beacons or accept incoming connections
+				break
 			}
-			// Try and see if we already have a TCP listener for this interface
 			var linfo *listenerInfo
 			if _, ok := m._listeners[iface.Name]; !ok {
-				// No listener was found - let's create one
 				v := &url.Values{}
 				v.Add("priority", fmt.Sprintf("%d", info.priority))
 				v.Add("password", string(info.password))
@@ -331,17 +304,14 @@ func (m *Multicast) _announce() {
 				}
 				if li, err := m.core.ListenLocal(u, iface.Name); err == nil {
 					m.log.Debugln("Started multicasting on", iface.Name)
-					// Store the listener so that we can stop it later if needed
 					linfo = &listenerInfo{listener: li, time: time.Now(), port: info.port}
 					m._listeners[iface.Name] = linfo
 				} else {
 					m.log.Warnln("Not multicasting on", iface.Name, "due to error:", err)
 				}
 			} else {
-				// An existing listener was found
 				linfo = m._listeners[iface.Name]
 			}
-			// Make sure nothing above failed for some reason
 			if linfo == nil {
 				continue
 			}
@@ -371,7 +341,7 @@ func (m *Multicast) _announce() {
 			break
 		}
 	}
-	annInterval := time.Second + time.Microsecond*(time.Duration(rand.Intn(1048576))) // Randomize delay
+	annInterval := time.Second + time.Microsecond*(time.Duration(rand.Intn(1048576)))
 	m._timer = time.AfterFunc(annInterval, func() {
 		m.Act(nil, m._announce)
 	})
@@ -383,7 +353,7 @@ func (m *Multicast) listen() {
 		panic(err)
 	}
 	bs := make([]byte, 2048)
-	hb := make([]byte, 0, blake2b.Size) // Reused to reduce hash allocations
+
 	for {
 		if !m.running.Load() {
 			return
@@ -396,13 +366,7 @@ func (m *Multicast) listen() {
 			panic(err)
 		}
 		if rcm != nil {
-			// Windows can't set the flag needed to return a non-nil value here
-			// So only make these checks if we get something useful back
-			// TODO? Skip them always, I'm not sure if they're really needed...
-			if !rcm.Dst.IsLinkLocalMulticast() {
-				continue
-			}
-			if !rcm.Dst.Equal(groupAddr.IP) {
+			if !rcm.Dst.IsLinkLocalMulticast() || !rcm.Dst.Equal(groupAddr.IP) {
 				continue
 			}
 		}
@@ -411,11 +375,9 @@ func (m *Multicast) listen() {
 			continue
 		}
 		switch {
-		case adv.MajorVersion != core.ProtocolVersionMajor:
-			continue
-		case adv.MinorVersion != core.ProtocolVersionMinor:
-			continue
-		case adv.PublicKey.Equal(m.core.PublicKey()):
+		case adv.MajorVersion != core.ProtocolVersionMajor,
+			adv.MinorVersion != core.ProtocolVersionMinor,
+			adv.PublicKey.Equal(m.core.PublicKey()):
 			continue
 		}
 		from := fromAddr.(*net.UDPAddr)
@@ -425,16 +387,12 @@ func (m *Multicast) listen() {
 			interfaces = m._interfaces
 		})
 		if info, ok := interfaces[from.Zone]; ok && info.listen {
-			hasher, err := blake2b.New512(info.password)
-			if err != nil {
+			hasher := blake3.New()
+			hasher.Write(info.password)
+			if _, err := hasher.Write(adv.PublicKey); err != nil {
 				continue
 			}
-			if n, err := hasher.Write(adv.PublicKey); err != nil {
-				continue
-			} else if n != ed25519.PublicKeySize {
-				continue
-			}
-			if !bytes.Equal(hasher.Sum(hb[:0]), adv.Hash) {
+			if !bytes.Equal(hasher.Sum(nil), adv.Hash) {
 				continue
 			}
 			v := &url.Values{}
@@ -452,3 +410,6 @@ func (m *Multicast) listen() {
 		}
 	}
 }
+
+
+

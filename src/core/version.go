@@ -25,7 +25,7 @@ type version_metadata struct {
 
 const (
 	ProtocolVersionMajor uint16 = 0
-	ProtocolVersionMinor uint16 = 5
+	ProtocolVersionMinor uint16 = 6
 )
 
 // Once a major/minor version is released, it is not safe to change any of these
