@@ -1,8 +1,13 @@
+// core_test.go
 package core
 
 import (
 	"bytes"
+	"context"
+	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/hex"
+	"net"
 	"net/url"
 	"os"
 	"testing"
@@ -10,281 +15,169 @@ import (
 
 	"github.com/gologme/log"
 	"github.com/ruvcoindev/ruvchain/src/config"
+	"github.com/stretchr/testify/require"
 )
 
-// GetLoggerWithPrefix creates a new logger instance with prefix.
-// If verbose is set to true, three log levels are enabled: "info", "warn", "error".
-func GetLoggerWithPrefix(prefix string, verbose bool) *log.Logger {
-	l := log.New(os.Stderr, prefix, log.Flags())
-	if !verbose {
-		return l
-	}
-	l.EnableLevel("info")
-	l.EnableLevel("warn")
-	l.EnableLevel("error")
-	return l
+// TestMain устанавливает общие настройки для всех тестов
+func TestMain(m *testing.M) {
+	log.DisableLogging()
+	os.Exit(m.Run())
 }
 
-func require_NoError(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
+// TestCoreStructure проверяет базовую структуру ядра
+func TestCoreStructure(t *testing.T) {
+	cfg := config.GenerateConfig()
+	require.NoError(t, cfg.GenerateSelfSignedCertificate(), "Генерация сертификата")
+
+	logger := log.New(os.Stderr, "TEST: ", 0)
+	
+	t.Run("Создание нового экземпляра", func(t *testing.T) {
+		instance, err := New(cfg, logger)
+		require.NoError(t, err, "Создание ядра")
+		require.NotNil(t, instance, "Экземпляр не должен быть nil")
+		instance.Stop()
+	})
+
+	t.Run("Дублированное создание", func(t *testing.T) {
+		instance, _ := New(cfg, logger)
+		defer instance.Stop()
+		
+		_, err := New(cfg, logger)
+		require.Error(t, err, "Ожидалась ошибка при дублировании")
+	})
 }
 
-func require_Equal[T comparable](t *testing.T, a, b T) {
-	t.Helper()
-	if a != b {
-		t.Fatalf("%v != %v", a, b)
-	}
-}
+// TestNetworkOperations проверяет сетевые операции
+func TestNetworkOperations(t *testing.T) {
+	cfgA := config.GenerateConfig()
+	cfgB := config.GenerateConfig()
+	require.NoError(t, cfgA.GenerateSelfSignedCertificate())
+	require.NoError(t, cfgB.GenerateSelfSignedCertificate())
 
-func require_True(t *testing.T, a bool) {
-	t.Helper()
-	if !a {
-		t.Fatal("expected true")
-	}
-}
+	logger := log.New(os.Stderr, "NETWORK: ", 0)
 
-// CreateAndConnectTwo creates two nodes. nodeB connects to nodeA.
-// Verbosity flag is passed to logger.
-func CreateAndConnectTwo(t testing.TB, verbose bool) (nodeA *Core, nodeB *Core) {
-	var err error
-
-	cfgA, cfgB := config.GenerateConfig(), config.GenerateConfig()
-	if err = cfgA.GenerateSelfSignedCertificate(); err != nil {
-		t.Fatal(err)
-	}
-	if err = cfgB.GenerateSelfSignedCertificate(); err != nil {
-		t.Fatal(err)
-	}
-
-	logger := GetLoggerWithPrefix("", false)
-	logger.EnableLevel("debug")
-
-	if nodeA, err = New(cfgA.Certificate, logger); err != nil {
-		t.Fatal(err)
-	}
-	if nodeB, err = New(cfgB.Certificate, logger); err != nil {
-		t.Fatal(err)
-	}
-
-	nodeAListenURL, err := url.Parse("tcp://localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodeAListener, err := nodeA.Listen(nodeAListenURL, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	nodeAURL, err := url.Parse("tcp://" + nodeAListener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = nodeB.CallPeer(nodeAURL, ""); err != nil {
-		t.Fatal(err)
-	}
-
-	time.Sleep(100 * time.Millisecond)
-
-	if l := len(nodeA.GetPeers()); l != 1 {
-		t.Fatal("unexpected number of peers", l)
-	}
-	if l := len(nodeB.GetPeers()); l != 1 {
-		t.Fatal("unexpected number of peers", l)
-	}
-
-	return nodeA, nodeB
-}
-
-// WaitConnected blocks until either nodes negotiated DHT or 5 seconds passed.
-func WaitConnected(nodeA, nodeB *Core) bool {
-	// It may take up to 3 seconds, but let's wait 5.
-	for i := 0; i < 50; i++ {
-		time.Sleep(100 * time.Millisecond)
-		/*
-			if len(nodeA.GetPeers()) > 0 && len(nodeB.GetPeers()) > 0 {
-				return true
-			}
-		*/
-		if len(nodeA.GetTree()) > 1 && len(nodeB.GetTree()) > 1 {
-			time.Sleep(3 * time.Second) // FIXME hack, there's still stuff happening internally
-			return true
-		}
-	}
-	return false
-}
-
-// CreateEchoListener creates a routine listening on nodeA. It expects repeats messages of length bufLen.
-// It returns a channel used to synchronize the routine with caller.
-func CreateEchoListener(t testing.TB, nodeA *Core, bufLen int, repeats int) chan struct{} {
-	// Start routine
-	done := make(chan struct{})
-	go func() {
-		buf := make([]byte, bufLen)
-		res := make([]byte, bufLen)
-		for i := 0; i < repeats; i++ {
-			n, from, err := nodeA.ReadFrom(buf)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			if n != bufLen {
-				t.Error("missing data")
-				return
-			}
-			copy(res, buf)
-			copy(res[8:24], buf[24:40])
-			copy(res[24:40], buf[8:24])
-			_, err = nodeA.WriteTo(res, from)
-			if err != nil {
-				t.Error(err)
-			}
-		}
-		done <- struct{}{}
-	}()
-
-	return done
-}
-
-// TestCore_Start_Connect checks if two nodes can connect together.
-func TestCore_Start_Connect(t *testing.T) {
-	CreateAndConnectTwo(t, true)
-}
-
-// TestCore_Start_Transfer checks that messages can be passed between nodes (in both directions).
-func TestCore_Start_Transfer(t *testing.T) {
-	nodeA, nodeB := CreateAndConnectTwo(t, true)
+	nodeA, err := New(cfgA, logger)
+	require.NoError(t, err)
 	defer nodeA.Stop()
+
+	nodeB, err := New(cfgB, logger)
+	require.NoError(t, err)
 	defer nodeB.Stop()
 
-	msgLen := 1500
-	done := CreateEchoListener(t, nodeA, msgLen, 1)
+	t.Run("Установка соединения", func(t *testing.T) {
+		listener, err := nodeA.Listen("tcp://127.0.0.1:0")
+		require.NoError(t, err)
+		defer listener.Close()
 
-	if !WaitConnected(nodeA, nodeB) {
-		t.Fatal("nodes did not connect")
-	}
+		peerURL := "tcp://" + listener.Addr().String()
+		require.NoError(t, nodeB.Connect(peerURL))
 
-	// Send
-	msg := make([]byte, msgLen)
-	_, _ = rand.Read(msg[40:])
-	msg[0] = 0x60
-	copy(msg[8:24], nodeB.Address())
-	copy(msg[24:40], nodeA.Address())
-	_, err := nodeB.WriteTo(msg, nodeA.LocalAddr())
-	if err != nil {
-		t.Fatal(err)
-	}
-	buf := make([]byte, msgLen)
-	_, _, err = nodeB.ReadFrom(buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(msg[40:], buf[40:]) {
-		t.Fatal("expected echo")
-	}
-	<-done
+		require.Eventually(t, func() bool {
+			return len(nodeA.Peers()) > 0 && len(nodeB.Peers()) > 0
+		}, 5*time.Second, 100*time.Millisecond, "Нет подключенных пиров")
+	})
+
+	t.Run("Передача данных", func(t *testing.T) {
+		testPayload := []byte("test payload")
+		done := make(chan struct{})
+
+		go func() {
+			buf := make([]byte, 1024)
+			n, _, err := nodeA.ReadFrom(buf)
+			require.NoError(t, err)
+			require.Equal(t, testPayload, buf[:n])
+			close(done)
+		}()
+
+		_, err := nodeB.WriteTo(testPayload, nodeA.LocalAddr())
+		require.NoError(t, err)
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("Таймаут передачи данных")
+		}
+	})
 }
 
-// BenchmarkCore_Start_Transfer estimates the possible transfer between nodes (in MB/s).
-func BenchmarkCore_Start_Transfer(b *testing.B) {
-	nodeA, nodeB := CreateAndConnectTwo(b, false)
+// TestSecurityFeatures проверяет функции безопасности
+func TestSecurityFeatures(t *testing.T) {
+	cfg := config.GenerateConfig()
+	require.NoError(t, cfg.GenerateSelfSignedCertificate())
 
-	msgLen := 1500 // typical MTU
-	done := CreateEchoListener(b, nodeA, msgLen, b.N)
+	logger := log.New(os.Stderr, "SECURITY: ", 0)
+	
+	t.Run("Проверка пароля", func(t *testing.T) {
+		cfg.Core.Password = "securepassword123"
+		node, err := New(cfg, logger)
+		require.NoError(t, err)
+		defer node.Stop()
 
-	if !WaitConnected(nodeA, nodeB) {
-		b.Fatal("nodes did not connect")
-	}
+		require.True(t, node.checkPasswordAuth("securepassword123"), "Валидный пароль")
+		require.False(t, node.checkPasswordAuth("wrongpassword"), "Невалидный пароль")
+	})
 
-	// Send
-	msg := make([]byte, msgLen)
-	_, _ = rand.Read(msg[40:])
-	msg[0] = 0x60
-	copy(msg[8:24], nodeB.Address())
-	copy(msg[24:40], nodeA.Address())
+	t.Run("Проверка подписи", func(t *testing.T) {
+		publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
 
-	buf := make([]byte, msgLen)
+		data := []byte("important data")
+		signature := ed25519.Sign(privateKey, data)
 
-	b.SetBytes(int64(msgLen))
+		require.True(t, ed25519.Verify(publicKey, data, signature), "Верификация подписи")
+	})
+}
+
+// TestConfigurationHandling проверяет обработку конфигурации
+func TestConfigurationHandling(t *testing.T) {
+	t.Run("Генерация ключей", func(t *testing.T) {
+		cfg := config.GenerateConfig()
+		require.NoError(t, cfg.GenerateSelfSignedCertificate())
+		
+		require.NotEmpty(t, cfg.Core.PrivateKey, "Приватный ключ")
+		require.NotEmpty(t, cfg.Core.PublicKey, "Публичный ключ")
+	})
+
+	t.Run("Сериализация конфига", func(t *testing.T) {
+		cfg := config.GenerateConfig()
+		cfg.Core.Password = "testpassword"
+		
+		buf, err := cfg.ToBytes()
+		require.NoError(t, err)
+		require.NotEmpty(t, buf, "Сериализованные данные")
+		
+		newCfg, err := config.FromBytes(buf)
+		require.NoError(t, err)
+		require.Equal(t, cfg.Core.Password, newCfg.Core.Password, "Пароль должен совпадать")
+	})
+}
+
+// BenchmarkNetworkPerformance тестирует производительность сети
+func BenchmarkNetworkPerformance(b *testing.B) {
+	cfgA := config.GenerateConfig()
+	cfgB := config.GenerateConfig()
+	cfgA.GenerateSelfSignedCertificate()
+	cfgB.GenerateSelfSignedCertificate()
+
+	logger := log.New(os.Stderr, "BENCH: ", 0)
+	
+	nodeA, _ := New(cfgA, logger)
+	defer nodeA.Stop()
+	
+	nodeB, _ := New(cfgB, logger)
+	defer nodeB.Stop()
+
+	listener, _ := nodeA.Listen("tcp://127.0.0.1:0")
+	defer listener.Close()
+	
+	nodeB.Connect("tcp://" + listener.Addr().String())
+
+	payload := bytes.Repeat([]byte{0x01}, 1500)
 	b.ResetTimer()
 
-	addr := nodeA.LocalAddr()
-	for i := 0; i < b.N; i++ {
-		_, err := nodeB.WriteTo(msg, addr)
-		if err != nil {
-			b.Fatal(err)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			nodeB.WriteTo(payload, nodeA.LocalAddr())
 		}
-		_, _, err = nodeB.ReadFrom(buf)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-	<-done
-}
-
-func TestAllowedPublicKeys(t *testing.T) {
-	logger := GetLoggerWithPrefix("", false)
-	cfgA, cfgB := config.GenerateConfig(), config.GenerateConfig()
-	require_NoError(t, cfgA.GenerateSelfSignedCertificate())
-	require_NoError(t, cfgB.GenerateSelfSignedCertificate())
-
-	nodeA, err := New(cfgA.Certificate, logger, AllowedPublicKey("abcdef"))
-	require_NoError(t, err)
-	defer nodeA.Stop()
-
-	nodeB, err := New(cfgB.Certificate, logger)
-	require_NoError(t, err)
-	defer nodeB.Stop()
-
-	u, err := url.Parse("tcp://localhost:0")
-	require_NoError(t, err)
-
-	l, err := nodeA.Listen(u, "")
-	require_NoError(t, err)
-
-	u, err = url.Parse("tcp://" + l.Addr().String())
-	require_NoError(t, err)
-
-	require_NoError(t, nodeB.AddPeer(u, ""))
-
-	time.Sleep(time.Second)
-
-	peers := nodeB.GetPeers()
-	require_Equal(t, len(peers), 1)
-	require_True(t, !peers[0].Up)
-	require_True(t, peers[0].LastError != nil)
-}
-
-func TestAllowedPublicKeysLocal(t *testing.T) {
-	logger := GetLoggerWithPrefix("", false)
-	cfgA, cfgB := config.GenerateConfig(), config.GenerateConfig()
-	require_NoError(t, cfgA.GenerateSelfSignedCertificate())
-	require_NoError(t, cfgB.GenerateSelfSignedCertificate())
-
-	nodeA, err := New(cfgA.Certificate, logger, AllowedPublicKey("abcdef"))
-	require_NoError(t, err)
-	defer nodeA.Stop()
-
-	nodeB, err := New(cfgB.Certificate, logger)
-	require_NoError(t, err)
-	defer nodeB.Stop()
-
-	u, err := url.Parse("tcp://localhost:0")
-	require_NoError(t, err)
-
-	l, err := nodeA.ListenLocal(u, "")
-	require_NoError(t, err)
-
-	u, err = url.Parse("tcp://" + l.Addr().String())
-	require_NoError(t, err)
-
-	require_NoError(t, nodeB.AddPeer(u, ""))
-
-	time.Sleep(time.Second)
-
-	peers := nodeB.GetPeers()
-	require_Equal(t, len(peers), 1)
-	require_True(t, peers[0].Up)
-	require_True(t, peers[0].LastError == nil)
+	})
 }

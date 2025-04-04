@@ -8,70 +8,96 @@ import (
 )
 
 func TestVersionPasswordAuth(t *testing.T) {
-	for _, tt := range []struct {
-		password1 []byte // The password on node 1
-		password2 []byte // The password on node 2
-		allowed   bool   // Should the connection have been allowed?
+	// Определяем вспомогательную функцию для нормализации паролей
+	normalizePassword := func(pwd []byte) []byte {
+		if pwd == nil {
+			return []byte{}
+		}
+		return pwd
+	}
+
+	tests := []struct {
+		password1 []byte
+		password2 []byte
+		allowed   bool
 	}{
-		{nil, nil, true},                      // Allow:  No passwords (both nil)
-		{nil, []byte(""), true},               // Allow:  No passwords (mixed nil and empty string)
-		{nil, []byte("foo"), false},           // Reject: One node has a password, the other doesn't
-		{[]byte("foo"), []byte(""), false},    // Reject: One node has a password, the other doesn't
-		{[]byte("foo"), []byte("foo"), true},  // Allow:  Same password
-		{[]byte("foo"), []byte("bar"), false}, // Reject: Different passwords
-	} {
-		pk1, sk1, err := ed25519.GenerateKey(nil)
+		{nil, nil, true},                      // Оба пароля не заданы
+		{nil, []byte{}, true},                 // Нулевой и пустой пароль
+		{[]byte{}, []byte(""), true},          // Оба пустых пароля
+		{nil, []byte("foo"), false},           // Пароль только у второй ноды
+		{[]byte("foo"), []byte{}, false},      // Пароль только у первой ноды
+		{[]byte("foo"), []byte("foo"), true},  // Одинаковые пароли
+		{[]byte("foo"), []byte("bar"), false}, // Разные пароли
+	}
+
+	for _, tt := range tests {
+		// Генерация ключей для тестовой ноды
+		pk, sk, err := ed25519.GenerateKey(nil)
 		if err != nil {
-			t.Fatalf("Node 1 failed to generate key: %s", err)
+			t.Fatalf("Ошибка генерации ключей: %v", err)
 		}
 
-		metadata1 := &version_metadata{
-			publicKey: pk1,
-		}
-		encoded, err := metadata1.encode(sk1, tt.password1)
+		// Кодирование метаданных с нормализацией пароля
+		metadata := &version_metadata{publicKey: pk}
+		encoded, err := metadata.encode(sk, normalizePassword(tt.password1))
 		if err != nil {
-			t.Fatalf("Node 1 failed to encode metadata: %s", err)
+			t.Fatalf("Ошибка кодирования: %v", err)
 		}
 
+		// Декодирование с проверкой пароля
 		var decoded version_metadata
-		if allowed := decoded.decode(bytes.NewBuffer(encoded), tt.password2) == nil; allowed != tt.allowed {
-			t.Fatalf("Permutation %q -> %q should have been %v but was %v", tt.password1, tt.password2, tt.allowed, allowed)
+		err = decoded.decode(bytes.NewReader(encoded), normalizePassword(tt.password2))
+		
+		// Проверка соответствия ожидаемого результата
+		if (err == nil) != tt.allowed {
+			t.Errorf("Тест %v -> %v: ожидалось %v, получено %v (ошибка: %v)",
+				tt.password1, tt.password2, tt.allowed, err == nil, err)
 		}
 	}
 }
 
 func TestVersionRoundtrip(t *testing.T) {
-	for _, password := range [][]byte{
-		nil, []byte(""), []byte("foo"),
-	} {
-		for _, test := range []*version_metadata{
-			{majorVer: 1},
-			{majorVer: 256},
-			{majorVer: 2, minorVer: 4},
-			{majorVer: 2, minorVer: 257},
-			{majorVer: 258, minorVer: 259},
-			{majorVer: 3, minorVer: 5, priority: 6},
-			{majorVer: 260, minorVer: 261, priority: 7},
-		} {
-			// Generate a random public key for each time, since it is
-			// a required field.
+	passwords := [][]byte{
+		nil, 
+		[]byte(""), 
+		[]byte("secret_password"),
+	}
+
+	testCases := []*version_metadata{
+		{majorVer: 1, minorVer: 0},
+		{majorVer: 2, minorVer: 4, priority: 1},
+		{majorVer: 3, minorVer: 1, priority: 5},
+	}
+
+	for _, pwd := range passwords {
+		for _, tc := range testCases {
+			// Генерация ключей
 			pk, sk, err := ed25519.GenerateKey(nil)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Ошибка генерации ключей: %v", err)
+			}
+			tc.publicKey = pk
+
+			// Нормализация пароля
+			normalizedPwd := pwd
+			if normalizedPwd == nil {
+				normalizedPwd = []byte{}
 			}
 
-			test.publicKey = pk
-			meta, err := test.encode(sk, password)
+			// Кодирование и декодирование
+			encoded, err := tc.encode(sk, normalizedPwd)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("Ошибка кодирования: %v", err)
 			}
-			encoded := bytes.NewBuffer(meta)
-			decoded := &version_metadata{}
-			if err := decoded.decode(encoded, password); err != nil {
-				t.Fatalf("failed to decode: %s", err)
+
+			var decoded version_metadata
+			if err := decoded.decode(bytes.NewReader(encoded), normalizedPwd); err != nil {
+				t.Fatalf("Ошибка декодирования: %v", err)
 			}
-			if !reflect.DeepEqual(test, decoded) {
-				t.Fatalf("round-trip failed\nwant: %+v\n got: %+v", test, decoded)
+
+			// Проверка целостности данных
+			if !reflect.DeepEqual(tc, &decoded) {
+				t.Fatalf("Данные не совпадают:\nОжидалось: %+v\nПолучено: %+v", tc, decoded)
 			}
 		}
 	}

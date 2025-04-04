@@ -1,0 +1,66 @@
+blockchain:
+  # Параметры консенсуса
+  consensus_params:
+    poa:
+      validators:
+        - "0xabcd1234..."
+      epoch_blocks: 100
+    
+    dpos:
+      delegate_count: 21
+      vote_interval: 43200 # блоков (≈1 день)
+      unstake_period: 259200 # блоков (≈3 дня)
+
+  # Газ и комиссии
+  gas:
+    base: 1000000000 # 1 Gwei
+    max_priority_fee: 2000000000 # 2 Gwei
+    max_fee: 3000000000 # 3 Gwei
+
+  # Смарт-контракты
+  contracts:
+    dns_registry: "0x1234..."
+    staking: "0x5678..."
+    
+    dns:
+  # Основные параметры
+  tld: "ruv"
+  min_registration_duration: 31536000 # 1 год в секундах
+  max_registration_duration: 315360000 # 10 лет
+  
+  # Цены и залоги
+  pricing:
+    base_price: 50 RUV
+    annual_fee: 10 RUV
+    premium_domains:
+      - "blockchain.ruv"
+      - "wallet.ruv"
+    premium_multiplier: 5.0
+
+  # Резолверы
+  resolvers:
+    - "https://dns1.ruvchain.net"
+    - "https://dns2.ruvchain.net"
+    
+    
+    security:
+  # Шифрование
+  encryption:
+    algorithm: "aes-256-gcm"
+    key_derivation:
+      iterations: 1000000
+      memory: 256MB
+      parallelism: 4
+
+  # Доступ к API
+  api:
+    rate_limit: 1000/минуту
+    jwt:
+      secret: "encrypted:..." 
+      expiration: 3600 # 1 час
+
+  # Аудит
+  audit:
+    enabled: true
+    interval: 86400 # ежедневно
+    report_path: "/var/audit"

@@ -1,252 +1,292 @@
+// internal/core/core.go
 package core
 
 import (
-	"context"
 	"crypto/ed25519"
-	"crypto/tls"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/url"
+	"sync"
 	"time"
 
-	iwe "github.com/Arceliar/ironwood/encrypted"
-	iwn "github.com/Arceliar/ironwood/network"
-	iwt "github.com/Arceliar/ironwood/types"
-	"github.com/Arceliar/phony"
 	"github.com/gologme/log"
-
-	"github.com/ruvcoindev/ruvchain/src/address"
-	"github.com/ruvcoindev/ruvchain/src/version"
+	"github.com/ruvcoindev/ruvchain/internal/config"
+	"github.com/ruvcoindev/ruvchain/internal/crypto"
+	"github.com/ruvcoindev/ruvchain/internal/network"
+	"github.com/ruvcoindev/ruvchain/internal/protocol"
 )
 
-// The Core object represents the Ruvchain node. You should create a Core
-// object for each Ruvchain node you plan to run.
+var (
+	ErrPeerAlreadyConnected = errors.New("peer already connected")
+	ErrInvalidHandshake     = errors.New("invalid handshake")
+)
+
 type Core struct {
-	// This is the main data structure that holds everything else for a node
-	// We're going to keep our own copy of the provided config - that way we can
-	// guarantee that it will be covered by the mutex
-	phony.Inbox
-	*iwe.PacketConn
-	ctx          context.Context
-	cancel       context.CancelFunc
-	secret       ed25519.PrivateKey
-	public       ed25519.PublicKey
-	links        links
-	proto        protoHandler
-	log          Logger
-	addPeerTimer *time.Timer
-	config       struct {
-		tls *tls.Config // immutable after startup
-		//_peers             map[Peer]*linkInfo         // configurable after startup
-		_listeners         map[ListenAddress]struct{} // configurable after startup
-		peerFilter         func(ip net.IP) bool       // immutable after startup
-		nodeinfo           NodeInfo                   // immutable after startup
-		nodeinfoPrivacy    NodeInfoPrivacy            // immutable after startup
-		_allowedPublicKeys map[[32]byte]struct{}      // configurable after startup
-	}
-	pathNotify func(ed25519.PublicKey)
+	mu          sync.RWMutex
+	config      *config.Config
+	logger      *log.Logger
+	privateKey  ed25519.PrivateKey
+	publicKey   ed25519.PublicKey
+	nodeID      [32]byte
+	peers       map[[32]byte]*network.Peer
+	transport   network.Transport
+	running     bool
+	shutdownCh  chan struct{}
+	peerHandler PeerHandler
 }
 
-func New(cert *tls.Certificate, logger Logger, opts ...SetupOption) (*Core, error) {
-	c := &Core{
-		log: logger,
-	}
-	c.ctx, c.cancel = context.WithCancel(context.Background())
-	if c.log == nil {
-		c.log = log.New(io.Discard, "", 0)
-	}
-
-	if name := version.BuildName(); name != "unknown" {
-		c.log.Infoln("Build name:", name)
-	}
-	if version := version.BuildVersion(); version != "unknown" {
-		c.log.Infoln("Build version:", version)
-	}
-
-	var err error
-	c.config._listeners = map[ListenAddress]struct{}{}
-	c.config._allowedPublicKeys = map[[32]byte]struct{}{}
-	for _, opt := range opts {
-		switch opt.(type) {
-		case Peer, ListenAddress:
-			// We can't do peers yet as the links aren't set up.
-			continue
-		default:
-			if err = c._applyOption(opt); err != nil {
-				return nil, fmt.Errorf("failed to apply configuration option %T: %w", opt, err)
-			}
-		}
-	}
-	if cert == nil || cert.PrivateKey == nil {
-		return nil, fmt.Errorf("no private key supplied")
-	}
-	var ok bool
-	if c.secret, ok = cert.PrivateKey.(ed25519.PrivateKey); !ok {
-		return nil, fmt.Errorf("private key must be ed25519")
-	}
-	if len(c.secret) != ed25519.PrivateKeySize {
-		return nil, fmt.Errorf("private key is incorrect length")
-	}
-	c.public = c.secret.Public().(ed25519.PublicKey)
-
-	if c.config.tls, err = c.generateTLSConfig(cert); err != nil {
-		return nil, fmt.Errorf("error generating TLS config: %w", err)
-	}
-	keyXform := func(key ed25519.PublicKey) ed25519.PublicKey {
-		return address.SubnetForKey(key).GetKey()
-	}
-	if c.PacketConn, err = iwe.NewPacketConn(
-		c.secret,
-		iwn.WithBloomTransform(keyXform),
-		iwn.WithPeerMaxMessageSize(65535*2),
-		iwn.WithPathNotify(c.doPathNotify),
-	); err != nil {
-		return nil, fmt.Errorf("error creating encryption: %w", err)
-	}
-	c.proto.init(c)
-	if err := c.links.init(c); err != nil {
-		return nil, fmt.Errorf("error initialising links: %w", err)
-	}
-	for _, opt := range opts {
-		switch opt.(type) {
-		case Peer, ListenAddress:
-			// Now do the peers and listeners.
-			if err = c._applyOption(opt); err != nil {
-				return nil, fmt.Errorf("failed to apply configuration option %T: %w", opt, err)
-			}
-		default:
-			continue
-		}
-	}
-	if err := c.proto.nodeinfo.setNodeInfo(c.config.nodeinfo, bool(c.config.nodeinfoPrivacy)); err != nil {
-		return nil, fmt.Errorf("error setting node info: %w", err)
-	}
-	for listenaddr := range c.config._listeners {
-		u, err := url.Parse(string(listenaddr))
-		if err != nil {
-			c.log.Errorf("Invalid listener URI %q specified, ignoring\n", listenaddr)
-			continue
-		}
-		if _, err = c.links.listen(u, "", false); err != nil {
-			c.log.Errorf("Failed to start listener %q: %s\n", listenaddr, err)
-		}
-	}
-	return c, nil
+type PeerHandler interface {
+	HandleMessage(msg *protocol.Message) error
+	HandleNewPeer(p *network.Peer)
+	HandleDisconnect(p *network.Peer)
 }
 
-func (c *Core) RetryPeersNow() {
-	phony.Block(&c.links, func() {
-		for _, l := range c.links._links {
-			select {
-			case l.kick <- struct{}{}:
-			default:
-			}
-		}
-	})
+func New(cfg *config.Config, logger *log.Logger) (*Core, error) {
+	if len(cfg.PrivateKey) != ed25519.PrivateKeySize*2 {
+		return nil, fmt.Errorf("invalid private key length")
+	}
+
+	privateKeyBytes, err := hex.DecodeString(cfg.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode private key: %w", err)
+	}
+
+	if len(privateKeyBytes) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid private key size")
+	}
+
+	privateKey := ed25519.PrivateKey(privateKeyBytes)
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+
+	return &Core{
+		config:      cfg,
+		logger:      logger,
+		privateKey: privateKey,
+		publicKey:   publicKey,
+		nodeID:      crypto.DeriveNodeID(privateKey),
+		peers:       make(map[[32]byte]*network.Peer),
+		transport:   network.NewTCPTransport(cfg.ListenAddr),
+		shutdownCh:  make(chan struct{}),
+	}, nil
 }
 
-// Stop shuts down the Ruvchain node.
+func (c *Core) Start() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.running {
+		return errors.New("core already running")
+	}
+
+	if err := c.transport.Listen(); err != nil {
+		return fmt.Errorf("failed to start transport: %w", err)
+	}
+
+	c.running = true
+	go c.listenLoop()
+	go c.connectionCleanupLoop()
+
+	c.logger.Info("Core started successfully")
+	return nil
+}
+
 func (c *Core) Stop() {
-	phony.Block(c, func() {
-		c.log.Infoln("Stopping...")
-		_ = c._close()
-		c.log.Infoln("Stopped")
-	})
-}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-// This function is unsafe and should only be ran by the core actor.
-func (c *Core) _close() error {
-	c.cancel()
-	c.links.shutdown()
-	err := c.PacketConn.Close()
-	if c.addPeerTimer != nil {
-		c.addPeerTimer.Stop()
-		c.addPeerTimer = nil
-	}
-	return err
-}
-
-func (c *Core) MTU() uint64 {
-	const sessionTypeOverhead = 1
-	MTU := c.PacketConn.MTU() - sessionTypeOverhead
-	if MTU > 65535 {
-		MTU = 65535
-	}
-	return MTU
-}
-
-func (c *Core) ReadFrom(p []byte) (n int, from net.Addr, err error) {
-	buf := allocBytes(int(c.PacketConn.MTU()))
-	defer freeBytes(buf)
-	for {
-		bs := buf
-		n, from, err = c.PacketConn.ReadFrom(bs)
-		if err != nil {
-			return 0, from, err
-		}
-		if n == 0 {
-			continue
-		}
-		switch bs[0] {
-		case typeSessionTraffic:
-			// This is what we want to handle here
-		case typeSessionProto:
-			var key keyArray
-			copy(key[:], from.(iwt.Addr))
-			data := append([]byte(nil), bs[1:n]...)
-			c.proto.handleProto(nil, key, data)
-			continue
-		default:
-			continue
-		}
-		bs = bs[1:n]
-		copy(p, bs)
-		if len(p) < len(bs) {
-			n = len(p)
-		} else {
-			n = len(bs)
-		}
+	if !c.running {
 		return
 	}
-}
 
-func (c *Core) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	buf := allocBytes(0)
-	defer func() { freeBytes(buf) }()
-	buf = append(buf, typeSessionTraffic)
-	buf = append(buf, p...)
-	n, err = c.PacketConn.WriteTo(buf, addr)
-	if n > 0 {
-		n -= 1
+	close(c.shutdownCh)
+	c.transport.Close()
+
+	for _, peer := range c.peers {
+		peer.Close()
 	}
-	return
+
+	c.running = false
+	c.logger.Info("Core stopped")
 }
 
-func (c *Core) doPathNotify(key ed25519.PublicKey) {
-	c.Act(nil, func() {
-		if c.pathNotify != nil {
-			c.pathNotify(key)
+func (c *Core) listenLoop() {
+	for {
+		select {
+		case <-c.shutdownCh:
+			return
+		default:
+			conn, err := c.transport.Accept()
+			if err != nil {
+				if network.IsClosedError(err) {
+					return
+				}
+				c.logger.Warnf("Accept error: %v", err)
+				continue
+			}
+
+			go c.handleNewConnection(conn)
 		}
-	})
+	}
 }
 
-func (c *Core) SetPathNotify(notify func(ed25519.PublicKey)) {
-	c.Act(nil, func() {
-		c.pathNotify = notify
-	})
+func (c *Core) handleNewConnection(conn net.Conn) {
+	c.logger.Infof("New connection from %s", conn.RemoteAddr())
+
+	peer := network.NewPeer(conn)
+	defer peer.Close()
+
+	if err := c.performHandshake(peer); err != nil {
+		c.logger.Warnf("Handshake failed with %s: %v", conn.RemoteAddr(), err)
+		return
+	}
+
+	c.addPeer(peer)
+	defer c.removePeer(peer)
+
+	c.peerHandler.HandleNewPeer(peer)
+
+	if err := c.readLoop(peer); err != nil {
+		c.logger.Warnf("Read loop error for %s: %v", peer.ID(), err)
+	}
 }
 
-type Logger interface {
-	Printf(string, ...interface{})
-	Println(...interface{})
-	Infof(string, ...interface{})
-	Infoln(...interface{})
-	Warnf(string, ...interface{})
-	Warnln(...interface{})
-	Errorf(string, ...interface{})
-	Errorln(...interface{})
-	Debugf(string, ...interface{})
-	Debugln(...interface{})
-	Traceln(...interface{})
+func (c *Core) performHandshake(p *network.Peer) error {
+	// Отправка нашего handshake
+	hs := &protocol.Handshake{
+		Version:    protocol.ProtocolVersion,
+		NodeID:     c.nodeID,
+		ListenPort: uint16(c.transport.Port()),
+		Timestamp:  time.Now().Unix(),
+	}
+
+	sig := ed25519.Sign(c.privateKey, hs.Bytes())
+	hs.Signature = sig
+
+	if err := p.SendHandshake(hs); err != nil {
+		return fmt.Errorf("failed to send handshake: %w", err)
+	}
+
+	// Получение ответного handshake
+	remoteHS, err := p.ReceiveHandshake()
+	if err != nil {
+		return fmt.Errorf("failed to receive handshake: %w", err)
+	}
+
+	// Валидация полученного handshake
+	if remoteHS.Version != protocol.ProtocolVersion {
+		return fmt.Errorf("protocol version mismatch: %d != %d",
+			remoteHS.Version, protocol.ProtocolVersion)
+	}
+
+	if !ed25519.Verify(remoteHS.PublicKey, remoteHS.Bytes(), remoteHS.Signature) {
+		return ErrInvalidHandshake
+	}
+
+	p.SetID(remoteHS.NodeID)
+	p.SetPublicKey(remoteHS.PublicKey)
+
+	return nil
+}
+
+func (c *Core) addPeer(p *network.Peer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if _, exists := c.peers[p.ID()]; exists {
+		p.Close()
+		return
+	}
+
+	c.peers[p.ID()] = p
+	c.logger.Infof("Added new peer %x", p.ID())
+}
+
+func (c *Core) removePeer(p *network.Peer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if _, exists := c.peers[p.ID()]; exists {
+		delete(c.peers, p.ID())
+		c.logger.Infof("Removed peer %x", p.ID())
+		c.peerHandler.HandleDisconnect(p)
+	}
+}
+
+func (c *Core) readLoop(p *network.Peer) error {
+	for {
+		select {
+		case <-c.shutdownCh:
+			return nil
+		default:
+			msg, err := p.ReadMessage()
+			if err != nil {
+				return fmt.Errorf("read error: %w", err)
+			}
+
+			if err := c.validateMessage(msg); err != nil {
+				return fmt.Errorf("invalid message: %w", err)
+			}
+
+			if err := c.peerHandler.HandleMessage(msg); err != nil {
+				return fmt.Errorf("message handling failed: %w", err)
+			}
+		}
+	}
+}
+
+func (c *Core) validateMessage(msg *protocol.Message) error {
+	if msg == nil {
+		return errors.New("nil message")
+	}
+
+	if time.Since(time.Unix(msg.Timestamp, 0)) > 5*time.Minute {
+		return errors.New("message too old")
+	}
+
+	if !ed25519.Verify(msg.SenderPublicKey, msg.Bytes(), msg.Signature) {
+		return errors.New("invalid message signature")
+	}
+
+	return nil
+}
+
+func (c *Core) connectionCleanupLoop() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.shutdownCh:
+			return
+		case <-ticker.C:
+			c.cleanupStaleConnections()
+		}
+	}
+}
+
+func (c *Core) cleanupStaleConnections() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	for id, peer := range c.peers {
+		if now.Sub(peer.LastActive()) > 5*time.Minute {
+			peer.Close()
+			delete(c.peers, id)
+			c.logger.Infof("Cleaned up stale connection to %x", id)
+		}
+	}
+}
+
+func (c *Core) GetPeerCount() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.peers)
+}
+
+func (c *Core) SetPeerHandler(handler PeerHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.peerHandler = handler
 }

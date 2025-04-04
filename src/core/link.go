@@ -16,32 +16,31 @@ import (
 
 	"github.com/Arceliar/phony"
 	"github.com/ruvcoindev/ruvchain/src/address"
-	"golang.org/x/crypto/blake2b"
+	
 )
 
 type linkType int
 
 const (
-	linkTypePersistent linkType = iota // Statically configured
-	linkTypeEphemeral                  // Multicast discovered
-	linkTypeIncoming                   // Incoming connection
+	linkTypePersistent linkType = iota
+	linkTypeEphemeral
+	linkTypeIncoming
 )
 
-const defaultBackoffLimit = time.Second << 12 // 1h8m16s
+const defaultBackoffLimit = time.Second << 12
 const minimumBackoffLimit = time.Second * 30
 
 type links struct {
 	phony.Inbox
 	core  *Core
-	tcp   *linkTCP   // TCP interface support
-	tls   *linkTLS   // TLS interface support
-	unix  *linkUNIX  // UNIX interface support
-	socks *linkSOCKS // SOCKS interface support
-	quic  *linkQUIC  // QUIC interface support
-	ws    *linkWS    // WS interface support
-	wss   *linkWSS   // WSS interface support
-	// _links can only be modified safely from within the links actor
-	_links     map[linkInfo]*link // *link is nil if connection in progress
+	tcp   *linkTCP
+	tls   *linkTLS
+	unix  *linkUNIX
+	socks *linkSOCKS
+	quic  *linkQUIC
+	ws    *linkWS
+	wss   *linkWSS
+	_links     map[linkInfo]*link
 	_listeners map[*Listener]context.CancelFunc
 }
 
@@ -50,23 +49,20 @@ type linkProtocol interface {
 	listen(ctx context.Context, url *url.URL, sintf string) (net.Listener, error)
 }
 
-// linkInfo is used as a map key
 type linkInfo struct {
-	uri   string // Peering URI in complete form
-	sintf string // Peering source interface (i.e. from InterfacePeers)
+	uri   string
+	sintf string
 }
 
-// link tracks the state of a connection, either persistent or non-persistent
 type link struct {
-	ctx       context.Context    // Connection context
-	cancel    context.CancelFunc // Stop future redial attempts (when peer removed)
-	kick      chan struct{}      // Attempt to reconnect now, if backing off
-	linkType  linkType           // Type of link, i.e. outbound/inbound, persistent/ephemeral
-	linkProto string             // Protocol carrier of link, e.g. TCP, AWDL
-	// The remaining fields can only be modified safely from within the links actor
-	_conn    *linkConn // Connected link, if any, nil if not connected
-	_err     error     // Last error on the connection, if any
-	_errtime time.Time // Last time an error occurred
+	ctx       context.Context
+	cancel    context.CancelFunc
+	kick      chan struct{}
+	linkType  linkType
+	linkProto string
+	_conn    *linkConn
+	_err     error
+	_errtime time.Time
 }
 
 type linkOptions struct {
@@ -150,7 +146,8 @@ const ErrLinkAlreadyConfigured = linkError("peer is already configured")
 const ErrLinkNotConfigured = linkError("peer is not configured")
 const ErrLinkPriorityInvalid = linkError("priority value is invalid")
 const ErrLinkPinnedKeyInvalid = linkError("pinned public key is invalid")
-const ErrLinkPasswordInvalid = linkError("invalid password supplied")
+// ИЗМЕНЕНО: Обновлено сообщение об ошибке
+const ErrLinkPasswordInvalid = linkError("invalid password: must be 12-64 characters") 
 const ErrLinkUnrecognisedSchema = linkError("link schema unknown")
 const ErrLinkMaxBackoffInvalid = linkError("max backoff duration invalid")
 const ErrLinkSNINotSupported = linkError("SNI not supported on this link type")
@@ -159,16 +156,11 @@ const ErrLinkNoSuitableIPs = linkError("peer has no suitable addresses")
 func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 	var retErr error
 	phony.Block(l, func() {
-		// Generate the link info and see whether we think we already
-		// have an open peering to this peer.
 		lu := urlForLinkInfo(*u)
 		info := linkInfo{
 			uri:   lu.String(),
 			sintf: sintf,
 		}
-
-		// Collect together the link options, these are global options
-		// that are not specific to any given protocol.
 		options := linkOptions{
 			maxBackoff: defaultBackoffLimit,
 		}
@@ -194,7 +186,8 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 			options.priority = uint8(pi)
 		}
 		if p := u.Query().Get("password"); p != "" {
-			if len(p) > blake2b.Size {
+			// ИЗМЕНЕНО: Добавлена проверка минимальной длины
+			if len(p) < 12 || len(p) > 64 {
 				retErr = ErrLinkPasswordInvalid
 				return
 			}
@@ -208,27 +201,17 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 			}
 			options.maxBackoff = d
 		}
-		// SNI headers must contain hostnames and not IP addresses, so we must make sure
-		// that we do not populate the SNI with an IP literal. We do this by splitting
-		// the host-port combo from the query option and then seeing if it parses to an
-		// IP address successfully or not.
 		if sni := u.Query().Get("sni"); sni != "" {
 			if net.ParseIP(sni) == nil {
 				options.tlsSNI = sni
 			}
 		}
-		// If the SNI is not configured still because the above failed then we'll try
-		// again but this time we'll use the host part of the peering URI instead.
 		if options.tlsSNI == "" {
 			if host, _, err := net.SplitHostPort(u.Host); err == nil && net.ParseIP(host) == nil {
 				options.tlsSNI = host
 			}
 		}
 
-		// If we think we're already connected to this peer, load up
-		// the existing peer state. Try to kick the peer if possible,
-		// which will cause an immediate connection attempt if it is
-		// backing off for some reason.
 		state, ok := l._links[info]
 		if ok && state != nil {
 			select {
@@ -239,9 +222,6 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 			return
 		}
 
-		// Create the link entry. This will contain the connection
-		// in progress (if any), any error details and a context that
-		// lets the link be cancelled later.
 		state = &link{
 			linkType:  linkType,
 			linkProto: strings.ToUpper(u.Scheme),
@@ -249,20 +229,10 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 		}
 		state.ctx, state.cancel = context.WithCancel(l.core.ctx)
 
-		// Store the state of the link so that it can be queried later.
 		l._links[info] = state
 
-		// Track how many consecutive connection failures we have had,
-		// as we will back off exponentially rather than hammering the
-		// remote node endlessly.
 		var backoff int
 
-		// backoffNow is called when there's a connection error. It
-		// will wait for the specified amount of time and then return
-		// true, unless the peering context was cancelled (due to a
-		// peer removal most likely), in which case it returns false.
-		// The caller should check the return value to decide whether
-		// or not to give up trying.
 		backoffNow := func() bool {
 			if backoff < 32 {
 				backoff++
@@ -283,31 +253,19 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 			}
 		}
 
-		// resetBackoff is called by the connection handler when the
-		// handshake has successfully completed.
 		resetBackoff := func() {
 			backoff = 0
 		}
 
-		// The goroutine is responsible for attempting the connection
-		// and then running the handler. If the connection is persistent
-		// then the loop will run endlessly, using backoffs as needed.
-		// Otherwise the loop will end, cleaning up the link entry.
 		go func() {
 			defer phony.Block(l, func() {
 				if l._links[info] == state {
 					delete(l._links, info)
 				}
 			})
-
-			// This loop will run each and every time we want to attempt
-			// a connection to this peer.
-			// TODO get rid of this loop, this is *exactly* what time.AfterFunc is for, we should just send a signal to the links actor to kick off a goroutine as needed
 			for {
 				select {
 				case <-state.ctx.Done():
-					// The peering context has been cancelled, so don't try
-					// to dial again.
 					return
 				default:
 				}
@@ -318,43 +276,27 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 						l.core.log.Warnf("Link %q reached inconsistent error state", u.String())
 					}
 					if linkType == linkTypePersistent {
-						// If the link is a persistent configured peering,
-						// store information about the connection error so
-						// that we can report it through the admin socket.
 						phony.Block(l, func() {
 							state._conn = nil
 							state._err = err
 							state._errtime = time.Now()
 						})
-
-						// Back off for a bit. If true is returned here, we
-						// can continue onto the next loop iteration to try
-						// the next connection.
 						if backoffNow() {
 							continue
 						}
 						return
 					}
-					// Ephemeral and incoming connections don't remain
-					// after a connection failure, so exit out of the
-					// loop and clean up the link entry.
 					break
 				}
 
-				// The linkConn wrapper allows us to track the number of
-				// bytes written to and read from this connection without
-				// the help of ironwood.
 				lc := &linkConn{
 					Conn: conn,
 					up:   time.Now(),
 				}
 
-				// Update the link state with our newly wrapped connection.
-				// Clear the error state.
 				var doRet bool
 				phony.Block(l, func() {
 					if state._conn != nil {
-						// If a peering has come up in this time, abort this one.
 						doRet = true
 					}
 					state._conn = lc
@@ -363,8 +305,6 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 					return
 				}
 
-				// Give the connection to the handler. The handler will block
-				// for the lifetime of the connection.
 				switch err = l.handler(linkType, options, lc, resetBackoff, false); {
 				case err == nil:
 				case errors.Is(err, io.EOF):
@@ -373,9 +313,6 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 					l.core.log.Debugf("Link %s error: %s\n", u.Host, err)
 				}
 
-				// The handler has stopped running so the connection is dead,
-				// try to close the underlying socket just in case and then
-				// update the link state.
 				_ = lc.Close()
 				phony.Block(l, func() {
 					state._conn = nil
@@ -386,14 +323,11 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 					state._errtime = time.Now()
 				})
 
-				// If the link is persistently configured, back off if needed
-				// and then try reconnecting. Otherwise, exit out.
 				if linkType == linkTypePersistent {
 					if backoffNow() {
 						continue
 					}
 				}
-				// Ephemeral or incoming connections don't reconnect.
 				return
 			}
 		}()
@@ -404,16 +338,12 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 func (l *links) remove(u *url.URL, sintf string, _ linkType) error {
 	var retErr error
 	phony.Block(l, func() {
-		// Generate the link info and see whether we think we already
-		// have an open peering to this peer.
 		lu := urlForLinkInfo(*u)
 		info := linkInfo{
 			uri:   lu.String(),
 			sintf: sintf,
 		}
 
-		// If this peer is already configured then we will close the
-		// connection and stop it from retrying.
 		state, ok := l._links[info]
 		if ok && state != nil {
 			state.cancel()
@@ -475,7 +405,8 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 		options.priority = uint8(pi)
 	}
 	if p := u.Query().Get("password"); p != "" {
-		if len(p) > blake2b.Size {
+		// ИЗМЕНЕНО: Добавлена проверка минимальной длины
+		if len(p) < 12 || len(p) > 64 {
 			return nil, ErrLinkPasswordInvalid
 		}
 		options.password = []byte(p)
@@ -500,9 +431,6 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 			go func(conn net.Conn) {
 				defer conn.Close()
 
-				// In order to populate a somewhat sane looking connection
-				// URI in the admin socket, we need to replace the host in
-				// the listener URL with the remote address.
 				pu := *u
 				pu.Host = conn.RemoteAddr().String()
 				lu := urlForLinkInfo(pu)
@@ -511,9 +439,6 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 					sintf: sintf,
 				}
 
-				// If there's an existing link state for this link, get it.
-				// If this node is already connected to us, just drop the
-				// connection. This prevents duplicate peerings.
 				var lc *linkConn
 				var state *link
 				phony.Block(l, func() {
@@ -527,26 +452,18 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 						}
 					}
 					if state._conn != nil {
-						// If a connection has come up in this time, abort
-						// this one.
 						return
 					}
 
-					// The linkConn wrapper allows us to track the number of
-					// bytes written to and read from this connection without
-					// the help of ironwood.
 					lc = &linkConn{
 						Conn: conn,
 						up:   time.Now(),
 					}
 
-					// Update the link state with our newly wrapped connection.
-					// Clear the error state.
 					state._conn = lc
 					state._err = nil
 					state._errtime = time.Time{}
 
-					// Store the state of the link so that it can be queried later.
 					l._links[info] = state
 				})
 				defer phony.Block(l, func() {
@@ -558,8 +475,6 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 					return
 				}
 
-				// Give the connection to the handler. The handler will block
-				// for the lifetime of the connection.
 				switch err = l.handler(linkTypeIncoming, options, lc, nil, local); {
 				case err == nil:
 				case errors.Is(err, io.EOF):
@@ -568,9 +483,6 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 					l.core.log.Debugf("Link %s error: %s\n", u.Host, err)
 				}
 
-				// The handler has stopped running so the connection is dead,
-				// try to close the underlying socket just in case and then
-				// drop the link state.
 				_ = lc.Close()
 			}(conn)
 		}
@@ -634,8 +546,6 @@ func (l *links) handler(linkType linkType, options linkOptions, conn net.Conn, s
 	if err = conn.SetDeadline(time.Time{}); err != nil {
 		return fmt.Errorf("failed to clear handshake deadline: %w", err)
 	}
-	// Check if the remote side matches the keys we expected. This is a bit of a weak
-	// check - in future versions we really should check a signature or something like that.
 	if pinned := options.pinnedEd25519Keys; len(pinned) > 0 {
 		var key keyArray
 		copy(key[:], meta.publicKey)
@@ -643,7 +553,6 @@ func (l *links) handler(linkType linkType, options linkOptions, conn net.Conn, s
 			return fmt.Errorf("node public key that does not match pinned keys")
 		}
 	}
-	// Check if we're authorized to connect to this key / IP
 	if !local {
 		var allowed map[[32]byte]struct{}
 		phony.Block(l.core, func() {

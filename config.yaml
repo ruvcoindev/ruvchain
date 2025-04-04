@@ -1,0 +1,6 @@
+# config.yaml
+tracing:
+  jaeger:
+    endpoint: "http://localhost:14268/api/traces" # Адрес Jaeger
+    service_name: "ruvchain-node"                 # Имя сервиса в Jaeger
+    sampler: 0.1                                  # 10% запросов

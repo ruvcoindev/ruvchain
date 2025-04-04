@@ -1,0 +1,14 @@
+node:
+  name: "testnet-node"
+  listen_addr: "0.0.0.0:5002"
+
+blockchain:
+  consensus: "poa"
+  genesis_file: "./testnet-genesis.json"
+  
+dns:
+  enabled: false
+
+api:
+  enabled: true
+  listen: "0.0.0.0:8081"
