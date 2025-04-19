@@ -101,9 +101,8 @@ jobs:
           name: Windows package (${{ matrix.pkgarch }})
           path: "*.msi"
           if-no-files-found: error
-          
-          
-build-packages-router:
+
+  build-packages-router:
     strategy:
       fail-fast: false
       matrix:
@@ -130,13 +129,12 @@ build-packages-router:
 
       - name: Build package
         env:
-          BUILDDIR_RUV: /home/runner/work/ruvchain/ruvchain/ruvchain
-        run: cd /home/runner/work/ruvchain/ruvchain/vyatta-ruvchain && ./build-${{ matrix.pkgarch }}
+          BUILDDIR_RUV: /home/runner/work/ruvcoindev/ruvchain/ruvchain
+        run: cd /home/runner/work/ruvcoindev/ruvchain/vyatta-ruvchain && ./build-${{ matrix.pkgarch }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Router package (${{ matrix.pkgarch }})
-          path: "/home/runner/work/ruvchain/ruvchain/vyatta-ruvchain/*.deb"
+          path: "/home/runner/work/ruvcoindev/ruvchain/vyatta-ruvchain/*.deb"
           if-no-files-found: error
-  
