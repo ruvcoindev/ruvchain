@@ -130,7 +130,7 @@ build-packages-router:
 
       - name: Build package
         env:
-          BUILDDIR_YGG: /home/runner/work/ruvchain/ruvchain/ruvchain
+          BUILDDIR_RUV: /home/runner/work/ruvchain/ruvchain/ruvchain
         run: cd /home/runner/work/ruvchain/ruvchain/vyatta-ruvchain && ./build-${{ matrix.pkgarch }}
 
       - name: Upload artifacts
